@@ -1,0 +1,66 @@
+/* Practice Sheet Agent tokens — generated from tokens.json */
+:root, [data-theme="light"] {
+  --surface: #f6f8fb;
+  --surface-raised: #ffffff;
+  --surface-sunken: #eef2f7;
+  --line: #d5dde8;
+  --line-strong: #8596ad;
+  --ink: #13233a;
+  --ink-muted: #4f5f75;
+  --navy: #1b365d;
+  --on-navy: #ffffff;
+  --navy-soft: #e8f0fa;
+  --navy-line: #a9c4e6;
+  --sky: #2f5d9b;
+  --success: #0f6b63;
+  --success-soft: #e3f3f0;
+  --warning: #955300;
+  --warning-soft: #fdf3e3;
+  --danger: #b42318;
+  --danger-soft: #fdecea;
+  --on-danger: #ffffff;
+  --focus: var(--sky);
+  --link: var(--sky);
+  --shadow-card: 0 1px 2px rgba(19,35,58,0.06);
+  --shadow-pop: 0 8px 24px rgba(19,35,58,0.14);
+}
+[data-theme="dark"] {
+  --surface: #0f1620;
+  --surface-raised: #17212d;
+  --surface-sunken: #0b1118;
+  --line: #2a3747;
+  --line-strong: #5a6d85;
+  --ink: #e7edf5;
+  --ink-muted: #9fb0c4;
+  --navy: #8fb3e6;
+  --on-navy: #0f1620;
+  --navy-soft: #1a2b44;
+  --navy-line: #34507a;
+  --sky: #7aa7e0;
+  --success: #5eead4;
+  --success-soft: #0d2b29;
+  --warning: #fbbf24;
+  --warning-soft: #33240a;
+  --danger: #f97066;
+  --danger-soft: #3a1512;
+  --on-danger: #0f1620;
+  --focus: var(--sky);
+  --link: var(--sky);
+  --shadow-card: 0 1px 2px rgba(0,0,0,0.4);
+  --shadow-pop: 0 8px 24px rgba(0,0,0,0.55);
+}
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-pill: 999px;
+  --font-sans: "Public Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}

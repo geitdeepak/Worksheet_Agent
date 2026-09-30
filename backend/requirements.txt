@@ -1,0 +1,15 @@
+fastapi>=0.141
+uvicorn>=0.54
+sqlalchemy>=2.1
+pydantic-settings>=2.15
+python-multipart>=0.0.32
+openpyxl>=3.1
+pypdf>=6.19
+reportlab>=5.0
+pyjwt>=2.15
+anthropic>=1.9
+httpx>=0.28
+tzdata>=2025.2
+# tests
+pytest>=9.1
+uharfbuzz>=0.56

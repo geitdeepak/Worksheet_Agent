@@ -1,0 +1,31 @@
+/* Class colour palette. Each class gets one hue (chosen from its class number) used on its card, sidebar
+   badge, page header and labels. --class-N is the strong colour, -soft its tint, -2 the gradient partner.
+   Text on a strong colour uses --on-class. All pairs meet 4.5:1 contrast in both themes. */
+:root, [data-theme="light"] {
+  --on-class: #ffffff;
+  --class-1: #4f46e5; --class-1-soft: #eef0ff; --class-1-2: #7c3aed;  /* indigo → violet */
+  --class-2: #0f766e; --class-2-soft: #e3f5f2; --class-2-2: #0369a1;  /* teal → sky */
+  --class-3: #c2410c; --class-3-soft: #fff0e6; --class-3-2: #be185d;  /* orange → pink */
+  --class-4: #be185d; --class-4-soft: #fdebf3; --class-4-2: #7c3aed;  /* pink → violet */
+  --class-5: #6d28d9; --class-5-soft: #f3edff; --class-5-2: #4338ca;  /* violet → indigo */
+  --class-6: #047857; --class-6-soft: #e3f6ee; --class-6-2: #0f766e;  /* emerald → teal */
+  --class-7: #b45309; --class-7-soft: #fdf3e1; --class-7-2: #c2410c;  /* amber → orange */
+  --class-8: #0369a1; --class-8-soft: #e3f2fb; --class-8-2: #4f46e5;  /* sky → indigo */
+  --page-glow: radial-gradient(1200px 400px at 85% -120px, #e8ecff 0%, transparent 70%),
+               radial-gradient(900px 360px at -10% -80px, #e3f5f2 0%, transparent 70%);
+  --brand-gradient: linear-gradient(135deg, #1b365d 0%, #4f46e5 100%);
+}
+[data-theme="dark"] {
+  --on-class: #0f1620;
+  --class-1: #a5b4fc; --class-1-soft: #232649; --class-1-2: #c4b5fd;
+  --class-2: #5eead4; --class-2-soft: #0f2e2b; --class-2-2: #7dd3fc;
+  --class-3: #fdba74; --class-3-soft: #3a2413; --class-3-2: #f9a8d4;
+  --class-4: #f9a8d4; --class-4-soft: #3b1a2b; --class-4-2: #c4b5fd;
+  --class-5: #c4b5fd; --class-5-soft: #2b2146; --class-5-2: #a5b4fc;
+  --class-6: #6ee7b7; --class-6-soft: #0f2e23; --class-6-2: #5eead4;
+  --class-7: #fcd34d; --class-7-soft: #37290c; --class-7-2: #fdba74;
+  --class-8: #7dd3fc; --class-8-soft: #0f2a3a; --class-8-2: #a5b4fc;
+  --page-glow: radial-gradient(1200px 400px at 85% -120px, #1c2350 0%, transparent 70%),
+               radial-gradient(900px 360px at -10% -80px, #0f2e2b 0%, transparent 70%);
+  --brand-gradient: linear-gradient(135deg, #8fb3e6 0%, #a5b4fc 100%);
+}
