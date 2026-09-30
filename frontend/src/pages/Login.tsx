@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { api, setToken } from '../api';
-import { useAuth, type User } from '../app';
+import { ThemeToggle, useAuth, type User } from '../app';
 import { Banner, Button, classTone } from '../components/ds';
+
+const CLASSES = Array.from({ length: 12 }, (_, i) => String(i + 1));
 
 export default function Login() {
   const { user, setUser } = useAuth();
@@ -32,17 +34,17 @@ export default function Login() {
     <div className="login">
       <div className="login-hero">
         <div style={{ fontWeight: 700, fontSize: 15 }}>Practice Sheet Agent</div>
-        <div>
+        <div className="login-hero-body">
           <h2>Practice sheets that arrive two days before every exam.</h2>
           <p>Configure each class once. The platform finds upcoming exams, builds worksheets from your own syllabus and
             study material, and delivers them to the right students.</p>
           <div className="login-dots" aria-hidden="true">
-            {['6', '7', '8', '9', '10', '11', '12'].map((n) => <span key={n} style={classTone(`Class ${n}`)}>{n}</span>)}
+            {CLASSES.map((n) => <span key={n} style={classTone(`Class ${n}`)}>{n}</span>)}
           </div>
         </div>
-        <div style={{ fontSize: 13, opacity: 0.75 }}>Phase 1 · Email delivery · Phase 2 · Email and WhatsApp</div>
       </div>
       <div className="login-form-wrap">
+        <ThemeToggle className="login-theme" />
         <form className="psa-card login-form" onSubmit={submit}>
           <div>
             <div style={{ fontSize: 24, lineHeight: '32px', fontWeight: 700, color: 'var(--navy)' }}>Sign in</div>

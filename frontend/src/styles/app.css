@@ -277,7 +277,13 @@ label.psa-btn.is-disabled { opacity: .5; pointer-events: none; }
 .login-hero::before { content: ""; position: absolute; right: -120px; top: -120px; width: 380px; height: 380px; border-radius: 999px; background: rgba(255, 255, 255, .08); }
 .login-hero::after { content: ""; position: absolute; left: -80px; bottom: -140px; width: 320px; height: 320px; border-radius: 999px; background: rgba(255, 255, 255, .06); }
 .login-hero > * { position: relative; z-index: 1; }
-.login-dots { display: flex; gap: 8px; margin-top: 18px; }
+/* The hero is always a deep gradient, so its text stays white in both themes (--on-navy turns dark in dark mode). */
+.login .login-hero { color: #ffffff; }
+[data-theme="dark"] .login-hero { background: linear-gradient(145deg, #0b1a30 0%, #2e2a8a 55%, #4c1d95 100%) !important; }
+.login-hero-body { margin-block: auto; }
+.login-dots { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+.login-form-wrap { position: relative; }
+.login-theme { position: absolute; top: var(--space-5); right: var(--space-5); }
 .login-dots span { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; font-weight: 800; font-size: 14px;
   color: var(--on-class); background: linear-gradient(135deg, var(--c), var(--c2)); box-shadow: 0 4px 12px rgba(0, 0, 0, .2); }
 

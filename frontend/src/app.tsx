@@ -110,6 +110,17 @@ function useTheme() {
   return { theme, toggle };
 }
 
+/** Round sun/moon button that switches between light and dark mode (remembered in localStorage). */
+export function ThemeToggle({ className }: { className?: string }) {
+  const { theme, toggle } = useTheme();
+  const label = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
+  return (
+    <button type="button" className={className ? `theme-toggle ${className}` : 'theme-toggle'} onClick={toggle} aria-label={label} title={label}>
+      <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={18} />
+    </button>
+  );
+}
+
 /* ---------------------------------------------------------------- layout */
 const ClassesCtx = createContext<{ classes: ClassRef[]; refresh: () => void }>({ classes: [], refresh: () => {} });
 export const useClassList = () => useContext(ClassesCtx);
@@ -168,18 +179,13 @@ function UserMenu() {
 export function Layout(props: { active: string; title: ReactNode; crumb?: ReactNode; actions?: ReactNode; activeClass?: number; children: ReactNode }) {
   const { user } = useAuth();
   const { classes } = useClassList();
-  const { theme, toggle } = useTheme();
   const nav = useNavigate();
   return (
     <AppShell {...props} classes={classes}
       actions={<>
         {props.actions}
         <span className="top-divider" aria-hidden="true" />
-        <button type="button" className="theme-toggle" onClick={toggle}
-          aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
-          <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={18} />
-        </button>
+        <ThemeToggle />
         {user?.role === 'admin' ? (
           <button type="button" className="theme-toggle" onClick={() => nav('/settings')} aria-label="Settings" title="Settings">
             <Icon name="settings" size={18} />
