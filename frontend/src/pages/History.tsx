@@ -45,7 +45,7 @@ export default function History() {
               { key: 'ts', label: 'Time', mono: true, width: 150 },
               { key: 'event', label: 'Event', render: (r) => r.level === 'error' ? <StatusBadge status="failed">{r.event}</StatusBadge> : r.level === 'warning' ? <StatusBadge status="retrying">{r.event}</StatusBadge> : <span className="psa-mono">{r.event}</span> },
               { key: 'class', label: 'Class', render: (r) => r.class ?? '—' },
-              { key: 'summary', label: 'What happened' },
+              { key: 'summary', label: 'What happened', minWidth: 260 },
               { key: 'actor', label: 'By', render: (r) => <span className="muted-sm">{r.actor}</span> },
             ]} rows={audit.data ?? []} />
         </Card>

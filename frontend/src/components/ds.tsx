@@ -6,7 +6,7 @@ const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).jo
 
 export type IconName = 'dashboard' | 'classes' | 'calendar' | 'book' | 'users' | 'sliders' | 'bolt' | 'review' | 'send'
   | 'history' | 'upload' | 'file' | 'sheet' | 'mail' | 'chat' | 'check' | 'alert' | 'info' | 'arrow' | 'refresh' | 'plus'
-  | 'pause' | 'logout' | 'settings' | 'trash' | 'edit' | 'download' | 'moon' | 'sun' | 'scope';
+  | 'pause' | 'logout' | 'settings' | 'trash' | 'edit' | 'download' | 'moon' | 'sun' | 'scope' | 'menu' | 'close';
 export type Status = 'draft' | 'active' | 'paused' | 'pending' | 'running' | 'validation-failed' | 'awaiting-approval'
   | 'released' | 'completed' | 'failed' | 'cancelled' | 'queued' | 'sending' | 'sent' | 'delivered' | 'retrying' | 'skipped'
   | 'superseded' | 'generating';
@@ -46,6 +46,8 @@ const PATHS: Record<IconName, string[]> = {
   moon: ['M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z'],
   sun: ['M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8z', 'M12 2v2', 'M12 20v2', 'M2 12h2', 'M20 12h2', 'M5 5l1.4 1.4', 'M17.6 17.6L19 19', 'M5 19l1.4-1.4', 'M17.6 6.4L19 5'],
   scope: ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z', 'M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8z', 'M12 12h.01'],
+  menu: ['M4 7h16', 'M4 12h16', 'M4 17h16'],
+  close: ['M6 6l12 12', 'M18 6L6 18'],
 };
 
 export function Icon({ name, size, label, className }: { name: IconName; size?: number; label?: string; className?: string }) {
@@ -245,12 +247,12 @@ export function ChannelStatus({ channel, status, detail, phase }: { channel: 'em
 }
 
 /* ---- DataTable ---- */
-export interface Column<R> { key: string; label: string; mono?: boolean; align?: 'right'; width?: number | string; render?: (row: R) => ReactNode }
+export interface Column<R> { key: string; label: string; mono?: boolean; align?: 'right'; width?: number | string; minWidth?: number; render?: (row: R) => ReactNode }
 export function DataTable<R extends Record<string, any>>({ columns, rows, empty, onRowClick }: { columns: Column<R>[]; rows: (R & { id?: string | number; _selected?: boolean })[]; empty?: ReactNode; onRowClick?: (row: R) => void }) {
   return (
     <div className="psa-table-wrap">
       <table className="psa-table">
-        <thead><tr>{columns.map((c) => <th key={c.key} className={c.align === 'right' ? 'is-right' : undefined} style={c.width ? { width: c.width } : undefined}>{c.label}</th>)}</tr></thead>
+        <thead><tr>{columns.map((c) => <th key={c.key} className={c.align === 'right' ? 'is-right' : undefined} style={c.width || c.minWidth ? { width: c.width, minWidth: c.minWidth } : undefined}>{c.label}</th>)}</tr></thead>
         <tbody>
           {rows.length === 0 && empty ? <tr><td colSpan={columns.length} className="psa-empty">{empty}</td></tr> : null}
           {rows.map((r, i) => (
@@ -322,18 +324,29 @@ export function AppShell(p: {
   active?: string; title: ReactNode; crumb?: ReactNode; actions?: ReactNode; classes?: { id: number; name: string }[];
   activeClass?: number; children?: ReactNode; footer?: ReactNode;
 }) {
+  // On phones the sidebar collapses to a top bar; the menu button opens the links below it.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const close = () => setMenuOpen(false);
   return (
     <div className="psa-shell psa">
-      <aside className="psa-side">
-        <div className="psa-brand"><span className="psa-brand-mark">PS</span><span>Practice Sheet<br />Agent</span></div>
-        {NAV.map((n) => (
-          <NavLink key={n.id} to={n.to} className={cx('psa-nav', p.active === n.id && 'is-active')}><Icon name={n.icon} />{n.label}</NavLink>
-        ))}
-        {p.classes && p.classes.length ? <div className="psa-label psa-nav-section">Class workspaces</div> : null}
-        {(p.classes || []).map((c) => (
-          <NavLink key={c.id} to={`/classes/${c.id}`} style={classTone(c.name)}
-            className={cx('psa-nav', 'class-nav', p.activeClass === c.id && 'is-active')}><ClassBadge name={c.name} size={22} />{c.name}</NavLink>
-        ))}
+      <aside className={cx('psa-side', menuOpen && 'is-open')}>
+        <div className="psa-side-bar">
+          <div className="psa-brand"><span className="psa-brand-mark">PS</span><span>Practice Sheet<br /> Agent</span></div>
+          <button type="button" className="psa-menu-btn" onClick={() => setMenuOpen(!menuOpen)} aria-expanded={menuOpen}
+            aria-controls="psa-nav-links" aria-label={menuOpen ? 'Close menu' : 'Open menu'}>
+            <Icon name={menuOpen ? 'close' : 'menu'} size={20} />
+          </button>
+        </div>
+        <nav id="psa-nav-links" className="psa-nav-links">
+          {NAV.map((n) => (
+            <NavLink key={n.id} to={n.to} onClick={close} className={cx('psa-nav', p.active === n.id && 'is-active')}><Icon name={n.icon} />{n.label}</NavLink>
+          ))}
+          {p.classes && p.classes.length ? <div className="psa-label psa-nav-section">Class workspaces</div> : null}
+          {(p.classes || []).map((c) => (
+            <NavLink key={c.id} to={`/classes/${c.id}`} onClick={close} style={classTone(c.name)}
+              className={cx('psa-nav', 'class-nav', p.activeClass === c.id && 'is-active')}><ClassBadge name={c.name} size={22} />{c.name}</NavLink>
+          ))}
+        </nav>
         <div style={{ flex: 1 }} />
         {p.footer}
       </aside>
