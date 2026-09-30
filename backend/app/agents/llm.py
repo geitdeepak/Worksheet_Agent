@@ -82,6 +82,13 @@ closely as the counts allow.
 - MCQ questions have exactly four options, one correct; the answer repeats the correct option text exactly. \
 Other question types have an empty options list.
 - Answers are concise model answers a teacher can mark against (for long answers, the key points).
+- Lay answers out so a student can follow them, using line breaks (\\n) inside the answer string:
+  • Numerical problems: one step per line: "Given: …", then "Formula: …", then each calculation on its own \
+line, and a last line "Answer: <value with unit>". Never chain several equations on one line with commas.
+  • Answers with several points (definitions, reasons, differences): one numbered point per line ("1. …").
+  • Short factual answers: one or two plain sentences, no line breaks needed.
+  • In Hindi use the same layout with "दिया गया है:", "सूत्र:" and "उत्तर:".
+- Multi-part questions put each part on its own line: "(a) …", "(b) …".
 - Write clear, unambiguous questions suited to the class level. Do not repeat or trivially rephrase a question.
 - Write everything (title, instructions, questions, answers) in the requested language.
 - The title follows this form: "<Subject> Practice Sheet – Class <n> – Exam <day> <Month>"."""
@@ -140,8 +147,18 @@ def _parse_worksheet(message) -> dict:
         raise LLMError("The model returned malformed JSON.") from e
 
 
+def _gemini():
+    """The Gemini implementation of these same functions, when LLM_PROVIDER=gemini."""
+    if get_settings().llm_provider == "gemini":
+        from . import llm_gemini
+        return llm_gemini
+    return None
+
+
 def generate_worksheet_json(passages_block: str, brief: str) -> tuple[dict, str]:
     """Direct (interactive) call. Returns (worksheet dict, model that served it)."""
+    if g := _gemini():
+        return g.generate_worksheet_json(passages_block, brief)
     try:
         with _client().messages.stream(**_worksheet_params(passages_block, brief, 64000), **_request_kwargs()) as stream:
             message = stream.get_final_message()
@@ -156,6 +173,8 @@ def generate_worksheet_json(passages_block: str, brief: str) -> tuple[dict, str]
 
 def submit_worksheet_batch(custom_id: str, passages_block: str, brief: str) -> str:
     """Queue a worksheet on the Message Batches API (50% cheaper). Returns the batch id."""
+    if g := _gemini():
+        return g.submit_worksheet_batch(custom_id, passages_block, brief)
     try:
         batch = _client().messages.batches.create(requests=[
             {"custom_id": custom_id, "params": _worksheet_params(passages_block, brief, 32000)},
@@ -167,6 +186,8 @@ def submit_worksheet_batch(custom_id: str, passages_block: str, brief: str) -> s
 
 def poll_worksheet_batch(batch_id: str) -> tuple[dict, str] | None:
     """None while the batch is still running; otherwise (worksheet dict, model). Raises LLMError on failure."""
+    if g := _gemini():
+        return g.poll_worksheet_batch(batch_id)
     client = _client()
     try:
         batch = client.messages.batches.retrieve(batch_id)
@@ -185,6 +206,8 @@ def poll_worksheet_batch(batch_id: str) -> tuple[dict, str] | None:
 
 
 def cancel_batch(batch_id: str) -> None:
+    if g := _gemini():
+        return g.cancel_batch(batch_id)
     try:
         _client().messages.batches.cancel(batch_id)
     except anthropic.APIError as e:
@@ -193,6 +216,8 @@ def cancel_batch(batch_id: str) -> None:
 
 def transcribe_pdf(data: bytes) -> str:
     """OCR for scanned PDFs (no text layer). Returns '' when unavailable; never raises."""
+    if g := _gemini():
+        return g.transcribe_pdf(data)
     s = get_settings()
     if s.llm_provider != "anthropic" or len(data) > 30 * 1024 * 1024:
         return ""

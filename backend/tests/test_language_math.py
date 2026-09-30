@@ -29,6 +29,40 @@ def test_plain_math(src, want):
     assert to_plain_math(src) == want
 
 
+def test_worked_answer_is_laid_out_one_step_per_line():
+    from app.agents.mathtext import layout_answer
+    one_line = ("Given initial velocity u = 15 m/s, final velocity v = 0 m/s, acceleration a = −3 m/s². "
+                "Using v² − u² = 2as: 0² − 15² = 2(−3)s, −225 = −6s, s = 225/6 = 37.5 m.")
+    assert layout_answer(one_line).split("\n") == [
+        "Given initial velocity u = 15 m/s, final velocity v = 0 m/s, acceleration a = −3 m/s².",  # Given stays one line
+        "Using v² − u² = 2as:", "0² − 15² = 2(−3)s", "−225 = −6s", "s = 225/6 = 37.5 m."]
+
+
+def test_numbered_points_and_parts_get_their_own_lines():
+    from app.agents.mathtext import layout_answer, layout_question
+    assert layout_answer("The equations are: 1) v = u + at, 2) s = ut + ½at², 3) v² − u² = 2as. Here, u = initial velocity.") \
+        .split("\n") == ["The equations are:", "1) v = u + at", "2) s = ut + ½at²", "3) v² − u² = 2as.", "Here, u = initial velocity."]
+    assert layout_question("Walk 4 km north then 3 km east. (a) Find the distance. (b) Find the displacement.").split("\n") == [
+        "Walk 4 km north then 3 km east.", "(a) Find the distance.", "(b) Find the displacement."]
+
+
+def test_numbers_inside_calculations_are_not_list_items():
+    from app.agents.mathtext import layout_answer
+    text = ("Given u = 0 m/s, a = 2 m/s², t = 5 s. 1) Final velocity v = u + at = 0 + (2 × 5) = 10 m/s. "
+            "2) Displacement s = ut + ½at² = 0 + ½ × 2 × 5² = 25 m.")
+    assert layout_answer(text).split("\n") == [
+        "Given u = 0 m/s, a = 2 m/s², t = 5 s.", "1) Final velocity v = u + at = 0 + (2 × 5) = 10 m/s.",
+        "2) Displacement s = ut + ½at² = 0 + ½ × 2 × 5² = 25 m."]
+
+
+def test_layout_leaves_prose_and_teacher_layout_alone():
+    from app.agents.mathtext import layout_answer
+    prose = "Velocity changes in circular motion because the direction changes at every instant, even at constant speed."
+    assert layout_answer(prose) == prose
+    teacher = "Given: u = 0\nAnswer: 2 m/s²"
+    assert layout_answer(teacher) == teacher
+
+
 def test_hindi_subject_is_always_hindi():
     s = merge_worksheet_settings({"language": "English"})
     assert worksheet_language(s, "Hindi") == "Hindi"

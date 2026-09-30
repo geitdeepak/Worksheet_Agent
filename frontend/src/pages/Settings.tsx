@@ -52,10 +52,10 @@ export default function Settings() {
                 <Switch on={draft.use_batch} disabled={!admin} label="Use the cheaper batch service for scheduled worksheets"
                   description="Half the AI price. Scheduled worksheets take minutes to a few hours instead of seconds, which is fine because they are made two days ahead. “Make it now” is always immediate."
                   onChange={(v) => setDraft({ ...draft, use_batch: v })} />
-                {draft.providers.llm === 'anthropic' ? (
+                {draft.providers.llm !== 'offline' ? (
                   <div className="help">Model: <b>{draft.providers.llm_model}</b> at <b>{draft.providers.llm_effort}</b> effort, using up to
                     {' '}<b>{Math.round(draft.providers.llm_context_chars / 1000)}k characters</b> of the most relevant in-syllabus pages per worksheet.
-                    These are set in the server’s <span className="psa-mono">.env</span> (LLM_MODEL, LLM_EFFORT, LLM_CONTEXT_CHARS).</div>
+                    These are set in the server’s <span className="psa-mono">.env</span> ({draft.providers.llm === 'gemini' ? 'GEMINI_MODEL' : 'LLM_MODEL'}, LLM_EFFORT, LLM_CONTEXT_CHARS).</div>
                 ) : null}
               </div>
             </Card>
@@ -70,7 +70,9 @@ export default function Settings() {
           <div className="stack-lg">
             <Card title="Services">
               <div className="stack-sm" style={{ gap: 10 }}>
-                <div className="row-between"><span>Question generation</span>{draft.providers.llm === 'anthropic' ? <StatusBadge status="active">{draft.providers.llm_model}</StatusBadge> : <StatusBadge status="paused">Offline</StatusBadge>}</div>
+                <div className="row-between"><span>Question generation</span>{draft.providers.llm !== 'offline'
+                  ? <StatusBadge status="active">{draft.providers.llm === 'gemini' ? 'Gemini · ' : 'Claude · '}{draft.providers.llm_model}</StatusBadge>
+                  : <StatusBadge status="paused">Offline</StatusBadge>}</div>
                 <div className="row-between"><span>Email</span>{draft.providers.email === 'smtp' ? <StatusBadge status="active">SMTP</StatusBadge> : <StatusBadge status="paused">Outbox (not sent)</StatusBadge>}</div>
                 <div className="row-between"><span>WhatsApp</span>{draft.providers.whatsapp === 'cloud_api' ? <StatusBadge status="active">Business Platform</StatusBadge> : <StatusBadge status="paused">Outbox (not sent)</StatusBadge>}</div>
                 <div className="muted-sm">Providers and credentials are set in the server’s environment (backend/.env), never in the UI.</div>

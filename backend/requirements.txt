@@ -8,6 +8,7 @@ pypdf>=6.19
 reportlab>=5.0
 pyjwt>=2.15
 anthropic>=1.9
+google-genai>=2.25
 httpx>=0.28
 tzdata>=2025.2
 # tests

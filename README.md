@@ -20,7 +20,7 @@ Requirements: Python 3.12+ and Node 20+.
 cd backend
 python -m venv .venv
 .venv\Scripts\python -m pip install --only-binary=:all: -r requirements.txt
-copy .env.example .env        # then edit: JWT_SECRET, ADMIN_PASSWORD, ANTHROPIC_API_KEY
+copy .env.example .env        # then edit: JWT_SECRET, ADMIN_PASSWORD, GEMINI_API_KEY (or ANTHROPIC_API_KEY)
 .venv\Scripts\python -m uvicorn app.main:app --port 8010
 
 # Frontend (second terminal)
@@ -38,8 +38,16 @@ Sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD` from `.env`.
 Class 9 with a Mathematics exam two days from today, an exam syllabus (chapters 1, 2, 7 — chapter 6 explicitly excluded),
 chapter PDFs including the excluded chapter, and five students. Start the server and click **Run check now**.
 
-**Without an API key:** set `LLM_PROVIDER=offline` to build worksheets directly from PDF sentences. It is for trying
-the workflow only; such worksheets are labelled in the UI.
+**Choosing the AI.** Set `LLM_PROVIDER` in `backend/.env`:
+
+| Provider | Settings | Notes |
+|---|---|---|
+| `gemini` | `GEMINI_API_KEY`, `GEMINI_MODEL` (default `gemini-3.8-flash`), `GEMINI_FALLBACK_MODELS` | Backup models are tried automatically when a model is overloaded (503) or rate-limited (429). |
+| `anthropic` | `ANTHROPIC_API_KEY`, `LLM_MODEL` (default `claude-sonnet-5`) | |
+| `offline` | none | Builds questions from PDF sentences. For trying the workflow only; labelled in the UI. |
+
+Both AI providers use the same prompt, the same worksheet JSON schema, the Batch API for scheduled worksheets, and the
+same syllabus/validation checks afterwards. Settings › Services shows which one is active.
 
 ## Using it (for school staff)
 

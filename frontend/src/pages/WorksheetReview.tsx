@@ -161,9 +161,9 @@ export default function WorksheetReview() {
                           onMove={(dir) => moveQ(si, qi, dir)} onType={(t) => changeType(si, qi, t)} />
                       ) : (
                         <div key={qi} className={'q-item' + (flagged.has(ref) ? ' is-flagged' : '')} id={`q-${ref}`}>
-                          <div><b>{ref}.</b> {q.text}</div>
+                          <div className="q-text"><b>{ref}.</b> {q.text}</div>
                           {q.options.length ? <ol type="a" className="q-opts">{q.options.map((o, oi) => <li key={oi}>{o}</li>)}</ol> : null}
-                          <div className="q-answer">Answer: {q.answer}</div>
+                          <AnswerView answer={q.answer} />
                           <div className="q-meta">
                             <span className="muted-sm">{q.difficulty}{q.topic ? ` · ${q.topic}` : ''}</span>
                             {q.origin === 'teacher' ? <span className="edited-tag">Written by teacher</span>
@@ -237,6 +237,27 @@ export default function WorksheetReview() {
   );
 }
 
+/** One-line answers stay inline; worked answers show one step per line with their labels in bold. */
+const STEP_LABEL = /^(Given|To find|Formula|Solution|Using|Answer|Final answer|Therefore|Hence|दिया गया है|सूत्र|हल|उत्तर|अतः)\b\s*:?/i;
+function AnswerView({ answer }: { answer: string }) {
+  const lines = answer.split('\n').map((l) => l.trim()).filter(Boolean);
+  if (lines.length <= 1) return <div className="q-answer"><b>Answer:</b> {answer}</div>;
+  return (
+    <div className="q-answer is-steps">
+      <div className="q-answer-head">Answer</div>
+      {lines.map((line, i) => {
+        const m = STEP_LABEL.exec(line);
+        const final = /^(answer|final answer|उत्तर)\b/i.test(line);
+        return (
+          <div key={i} className={'q-step' + (final ? ' is-final' : '')}>
+            {m ? <><b>{m[0]}</b>{line.slice(m[0].length)}</> : line}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function QuestionEditor({ q, type, refLabel, labels, flagged, first, last, onChange, onRemove, onMove, onType }: {
   q: Question; type: string; refLabel: string; labels: Record<string, string>; flagged: boolean; first: boolean; last: boolean;
   onChange: (patch: Partial<Question>) => void; onRemove: () => void; onMove: (dir: -1 | 1) => void; onType: (t: string) => void;
@@ -266,7 +287,7 @@ function QuestionEditor({ q, type, refLabel, labels, flagged, first, last, onCha
           aria-label="Delete question" title="Delete question"><Icon name="trash" /></button>
       </div>
       <label className="field"><span>Question</span>
-        <textarea className="textarea" rows={2} value={q.text} placeholder="Type the question" autoFocus={q.origin === 'teacher' && !q.text}
+        <textarea className="textarea" rows={Math.min(8, Math.max(2, q.text.split('\n').length + 1))} value={q.text} placeholder="Type the question" autoFocus={q.origin === 'teacher' && !q.text}
           onChange={(e) => onChange({ text: e.target.value })} /></label>
       {isMcq ? (
         <div className="field"><span>Options · select the correct one</span>
@@ -284,7 +305,8 @@ function QuestionEditor({ q, type, refLabel, labels, flagged, first, last, onCha
         </div>
       ) : (
         <label className="field"><span>Answer</span>
-          <textarea className="textarea" rows={2} value={q.answer} placeholder="Model answer (used for the answer key)" onChange={(e) => onChange({ answer: e.target.value })} /></label>
+          <textarea className="textarea" rows={Math.min(10, Math.max(2, q.answer.split('\n').length + 1))} value={q.answer}
+            placeholder={'Model answer (used for the answer key). For numericals, one step per line:\nGiven: …\nFormula: …\nAnswer: …'} onChange={(e) => onChange({ answer: e.target.value })} /></label>
       )}
       <label className="row" style={{ gap: 6 }}>
         <input type="checkbox" checked={q.outside_syllabus} onChange={(e) => onChange({ outside_syllabus: e.target.checked, review_note: e.target.checked ? q.review_note : '' })} />

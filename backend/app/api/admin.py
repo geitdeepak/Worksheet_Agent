@@ -119,7 +119,8 @@ class SettingsIn(BaseModel):
 def settings_out(db: Session) -> dict:
     s = all_settings(db)
     cfg = get_settings()
-    s["providers"] = {"llm": cfg.llm_provider, "llm_model": cfg.llm_model if cfg.llm_provider == "anthropic" else None,
+    model = {"anthropic": cfg.llm_model, "gemini": cfg.gemini_model}.get(cfg.llm_provider)
+    s["providers"] = {"llm": cfg.llm_provider, "llm_model": model,
                       "llm_effort": cfg.llm_effort, "llm_context_chars": cfg.llm_context_chars,
                       "email": cfg.email_provider, "whatsapp": cfg.whatsapp_provider}
     return s

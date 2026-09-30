@@ -21,6 +21,7 @@ from reportlab.platypus import KeepTogether, PageBreak, Paragraph, SimpleDocTemp
 
 from ..config import get_settings
 from ..services.common import fmt_date, section_labels
+from .mathtext import layout_answer, layout_question
 
 NAVY = colors.HexColor("#1b365d")
 MUTED = colors.HexColor("#4f5f75")
@@ -75,6 +76,22 @@ def _fonts() -> dict:
 def rich(text: str, bold: bool = False) -> str:
     """Escape text for a Paragraph. One font covers Latin, Hindi and maths, so no font switching is needed."""
     return f"<b>{escape(text)}</b>" if bold and _fonts() else escape(text)
+
+
+_STEP_LABEL = re.compile(r"^(Given|To find|Formula|Solution|Using|Answer|Final answer|Therefore|Hence|"
+                         r"दिया गया है|सूत्र|हल|उत्तर|अतः)\b\s*:?", re.I)
+
+
+def lines_markup(text: str, labels: bool = False) -> str:
+    """Keep the answer's line breaks in the PDF; optionally bold step labels (Given:, Formula:, Answer: …)."""
+    out = []
+    for line in (text or "").split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        m = _STEP_LABEL.match(line) if labels else None
+        out.append(f"<b>{escape(m.group(0))}</b>{escape(line[m.end():])}" if m else escape(line))
+    return "<br/>".join(out)
 
 
 def _styles():
@@ -153,7 +170,7 @@ def render_worksheet_pdf(ws, school_class) -> Path:
         story.append(Paragraph(rich(f"{'खंड' if hindi else 'Section'} {letter} · {label}", bold=True), st["section"]))
         for q in sec.get("questions", []):
             n += 1
-            block = [Paragraph(f"<b>{n}.</b> {rich(q.get('text', ''))}", st["q"])]
+            block = [Paragraph(f"<b>{n}.</b> {lines_markup(layout_question(q.get('text', '')))}", st["q"])]
             for oi, opt in enumerate(q.get("options", [])):
                 mark = opt_letters[oi] if oi < 4 else str(oi + 1)
                 block.append(Paragraph(rich(f"({mark}) {opt}"), st["opt"]))
@@ -164,7 +181,9 @@ def render_worksheet_pdf(ws, school_class) -> Path:
     if settings.get("answer_key", True):
         story += [PageBreak(), Paragraph(rich(t("Answer key"), bold=True), st["title"]), Spacer(1, 6)]
         for n, q in answers:
-            story.append(Paragraph(f"<b>{n}.</b> {rich(q.get('answer', ''))}", st["ans"]))
+            answer = q.get("answer", "")
+            answer = answer if q.get("options") else layout_answer(answer)
+            story.append(Paragraph(f"<b>{n}.</b> {lines_markup(answer, labels=True)}", st["ans"]))
             story.append(Spacer(1, 3))
 
     doc = SimpleDocTemplate(str(path), pagesize=A4, leftMargin=18 * mm, rightMargin=18 * mm, topMargin=16 * mm,

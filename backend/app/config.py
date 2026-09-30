@@ -32,9 +32,17 @@ class Settings(BaseSettings):
     job_max_attempts: int = 3
     delivery_max_attempts: int = 3
 
-    # LLM. provider = "anthropic" | "offline". "offline" builds questions directly from the
-    # retrieved PDF text without a model, for local development and tests.
+    # LLM. provider = "anthropic" (Claude) | "gemini" (Google) | "offline". "offline" builds questions directly
+    # from the retrieved PDF text without a model, for local development and tests.
     llm_provider: str = "anthropic"
+    # Gemini (LLM_PROVIDER=gemini). LLM_EFFORT, LLM_CONTEXT_CHARS and the batch setting apply to both providers.
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-3.8-flash"
+    # Tried in order when the main model is overloaded (503) or rate-limited (429).
+    gemini_fallback_models: str = "gemini-3.7-flash,gemini-3.6-flash,gemini-3.5-flash"
+    # If every model is overloaded, wait and try the whole list again (wait grows each round).
+    gemini_retry_rounds: int = 3
+    gemini_retry_wait_seconds: int = 20
     # Cost-optimized defaults: Sonnet 5 at medium effort writes good school worksheets at a fraction of Opus'
     # price. Set LLM_MODEL=claude-opus-5 and LLM_EFFORT=high for the highest quality.
     llm_model: str = "claude-sonnet-5"
