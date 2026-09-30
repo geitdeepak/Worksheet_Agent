@@ -55,10 +55,11 @@ def fake_worksheet(passages_block: str) -> dict:
 
 @pytest.fixture
 def fake_claude(monkeypatch):
-    calls = {"direct": 0, "batch_submit": 0, "batch_poll": 0, "blocks": {}}
+    calls = {"direct": 0, "batch_submit": 0, "batch_poll": 0, "blocks": {}, "briefs": []}
 
     def direct(block, brief):
         calls["direct"] += 1
+        calls["briefs"].append(brief)
         return fake_worksheet(block), "claude-sonnet-5"
 
     def submit(custom_id, block, brief):

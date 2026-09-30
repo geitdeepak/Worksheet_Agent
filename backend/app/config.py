@@ -71,7 +71,6 @@ class Settings(BaseSettings):
     whatsapp_api_version: str = "v21.0"
     whatsapp_default_country_code: str = "91"
     whatsapp_template_name: str = ""
-    whatsapp_template_language: str = "en"
     whatsapp_webhook_verify_token: str = ""
 
     # Frontend build served by FastAPI in production

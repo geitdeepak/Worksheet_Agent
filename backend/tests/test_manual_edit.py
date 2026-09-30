@@ -63,3 +63,25 @@ def test_teacher_can_edit_everything(client, fake_claude):  # noqa: F811
     assert client.post(f"/api/worksheets/{ws_id}/approve", json={}).json()["status"] == "released"
     # Once released, it is locked.
     assert client.put(f"/api/worksheets/{ws_id}/content", json={"content": content}).status_code == 409
+
+    # "Make another worksheet": new questions for the same exam, sent separately; the first one is untouched.
+    with SessionLocal() as db:
+        worker_tick(db)  # deliver the first worksheet
+    assert client.post(f"/api/worksheets/{ws_id}/regenerate", json={"reason": "x"}).status_code == 409  # sent: locked
+    r = client.post(f"/api/worksheets/{ws_id}/another", json={"reason": "More numericals"})
+    assert r.status_code == 200, r.text
+    assert client.post(f"/api/worksheets/{ws_id}/another", json={}).status_code == 409  # already being made
+    with SessionLocal() as db:
+        worker_tick(db)
+        v2 = db.query(Worksheet).filter(Worksheet.class_id == cid, Worksheet.version == 2).one()
+        assert v2.status == "awaiting-approval" and v2.regeneration_reason == "More numericals"
+        assert db.get(Worksheet, ws_id).status == "released"
+        v2_id = v2.id
+    assert "<already_used>" in fake_claude["briefs"][-1]
+    assert "moving bus slows down" in fake_claude["briefs"][-1]  # the teacher's question is on the do-not-repeat list
+    assert client.post(f"/api/worksheets/{v2_id}/approve", json={}).json()["status"] == "released"
+    with SessionLocal() as db:
+        worker_tick(db)
+    first = client.get(f"/api/worksheets/{ws_id}/deliveries").json()["summary"]["email"]
+    second = client.get(f"/api/worksheets/{v2_id}/deliveries").json()["summary"]["email"]
+    assert first == second == {"sent": 3}  # the same three students received both, separately

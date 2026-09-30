@@ -130,18 +130,23 @@ def manual_generate(db: Session, exam: Exam, actor: str) -> Job | None:
     return job
 
 
-def regenerate(db: Session, ws: Worksheet, reason: str, actor: str) -> Job:
+def regenerate(db: Session, ws: Worksheet, reason: str, actor: str, *, extra: bool = False) -> Job:
+    """A new version of a worksheet. extra=True: an additional practice sheet for an exam whose worksheet was
+    already sent — the sent one stays as it is, and the new one goes to the same students separately."""
     c = db.get(SchoolClass, ws.class_id)
     exam = db.get(Exam, ws.exam_id)
     if exam is None or not exam.active:
         raise ValueError("The exam is no longer on the date sheet.")
+    if extra and exam.exam_date < local_today(db):
+        raise ValueError("This exam has already taken place.")
     latest = max(w.version for w in db.scalars(select(Worksheet).where(Worksheet.exam_id == exam.id)))
     job = Job(type="CREATE_WORKSHEET", business_key=create_key(c, exam, latest + 1), class_id=c.id, exam_id=exam.id,
               subject_name=exam.subject_name, sections=exam.sections, exam_date=exam.exam_date,
-              trigger_date=local_today(db), source="regenerate", last_error=reason)
+              trigger_date=local_today(db), source="extra" if extra else "regenerate", last_error=reason)
     if not _insert_job(db, job):
-        raise ValueError("A regeneration for this worksheet is already queued.")
-    audit(db, "regeneration", f"Regeneration requested · {ws.title} · v{ws.version} → v{latest + 1}", actor=actor,
+        raise ValueError("A new version of this worksheet is already being made.")
+    what = "Another worksheet requested" if extra else "Regeneration requested"
+    audit(db, "regeneration", f"{what} · {ws.title} · v{ws.version} → v{latest + 1}", actor=actor,
           class_id=c.id, original_version=ws.version, new_version=latest + 1, reason=reason)
     return job
 

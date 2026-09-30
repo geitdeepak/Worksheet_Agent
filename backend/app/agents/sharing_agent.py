@@ -4,13 +4,12 @@ One Delivery row per worksheet × student × channel (unique), so re-running a s
 crash or a retry never sends twice: rows already sent are skipped."""
 import logging
 from datetime import timedelta
-from html import escape
 from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..channels import PermanentError, TransientError
+from ..channels import PermanentError, TransientError, email_template, whatsapp_template
 from ..channels import email as email_channel
 from ..channels import whatsapp as whatsapp_channel
 from ..config import get_settings
@@ -37,19 +36,6 @@ def enabled_channels(db: Session, school_class: SchoolClass) -> list[str]:
     if school_class.channel_whatsapp and int(get_setting(db, "phase") or 1) >= 2:
         chans.append("whatsapp")
     return chans
-
-
-def _email_body(db: Session, ws: Worksheet, school_class: SchoolClass, student: Student) -> tuple[str, str, str]:
-    d = ws.exam_date
-    subject = f"{ws.subject_name} Practice Sheet – Class {school_class.grade} – Exam {d.day} {d.strftime('%B')}"
-    inst = get_setting(db, "institution_name")
-    text = (f"Dear {student.name},\n\nYour {ws.subject_name} exam is on {d.day} {d.strftime('%B %Y')}. "
-            f"Attached is a practice sheet built from your syllabus to help you revise.\n\n"
-            f"Work through it before the exam and check your answers against the key at the end.\n\n{inst}")
-    html = (f"<p>Dear {escape(student.name)},</p><p>Your <b>{escape(ws.subject_name)}</b> exam is on "
-            f"<b>{d.day} {d.strftime('%B %Y')}</b>. Attached is a practice sheet built from your syllabus to help you revise.</p>"
-            f"<p>Work through it before the exam and check your answers against the key at the end.</p><p>{escape(inst)}</p>")
-    return subject, text, html
 
 
 def prepare_deliveries(db: Session, ws: Worksheet) -> list[Delivery]:
@@ -86,13 +72,11 @@ def send_one(db: Session, d: Delivery, ws: Worksheet, school_class: SchoolClass,
     pdf = Path(ws.pdf_path) if ws.pdf_path else None
     try:
         if d.channel == "email":
-            subject, text, html = _email_body(db, ws, school_class, student)
+            subject, text, html = email_template.render(db, ws, school_class, student.name, pdf.name if pdf else "")
             pid, resp = email_channel.send_email(d.recipient, subject, text, html, pdf)
         else:
-            d8 = ws.exam_date
-            caption = f"{ws.subject_name} practice sheet · Class {school_class.grade} · Exam {d8.day} {d8.strftime('%b %Y')}"
-            pid, resp = whatsapp_channel.send_document(
-                d.recipient, pdf, caption, [ws.subject_name, f"Class {school_class.grade}", f"{d8.day} {d8.strftime('%b %Y')}"])
+            lang, values = whatsapp_template.params(db, ws, school_class, student.name)
+            pid, resp = whatsapp_channel.send_document(d.recipient, pdf, whatsapp_template.fill(lang, values), values, lang)
         d.status, d.provider_id, d.provider_response, d.error, d.next_attempt_at = "sent", pid, resp, None, None
     except TransientError as e:
         max_attempts = s.delivery_max_attempts

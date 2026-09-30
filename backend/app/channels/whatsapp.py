@@ -1,9 +1,10 @@
 """Phase 2 delivery channel: WhatsApp Business Platform (Cloud API), or an outbox for development.
 
 Business-initiated WhatsApp messages outside a 24-hour customer window must use an approved
-template. Set WHATSAPP_TEMPLATE_NAME to a template with a DOCUMENT header and three body
-parameters (subject, class, exam date). Without a template, a plain document message is sent,
-which only reaches students who messaged the school number in the last 24 hours."""
+template. Create the template defined in whatsapp_template.py (DOCUMENT header, six body
+parameters, English "en" and Hindi "hi") and set WHATSAPP_TEMPLATE_NAME to its name. Without a
+template, a plain document message is sent, which only reaches students who messaged the school
+number in the last 24 hours."""
 import json
 import uuid
 from pathlib import Path
@@ -19,12 +20,15 @@ def _graph(path: str) -> str:
     return f"https://graph.facebook.com/{s.whatsapp_api_version}/{path}"
 
 
-def send_document(to_digits: str, pdf: Path, caption: str, template_params: list[str]) -> tuple[str, str]:
+def send_document(to_digits: str, pdf: Path, caption: str, template_params: list[str], language: str = "en") -> tuple[str, str]:
+    """`caption` is the filled-in template text (see whatsapp_template.py); `template_params` are its placeholder values."""
     s = get_settings()
     if s.whatsapp_provider == "outbox":
         path = s.outbox_dir / "whatsapp" / f"{uuid.uuid4().hex}.json"
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({"to": to_digits, "document": pdf.name, "caption": caption}, indent=2), encoding="utf-8")
+        path.write_text(json.dumps({"to": to_digits, "document": pdf.name, "template": s.whatsapp_template_name or None,
+                                    "language": language, "params": template_params, "caption": caption},
+                                   indent=2, ensure_ascii=False), encoding="utf-8")
         return f"outbox-{path.stem}", f"written to {path.name}"
 
     if s.whatsapp_provider != "cloud_api" or not (s.whatsapp_phone_number_id and s.whatsapp_access_token):
@@ -41,7 +45,7 @@ def send_document(to_digits: str, pdf: Path, caption: str, template_params: list
             document = {"id": media_id, "filename": pdf.name}
             if s.whatsapp_template_name:
                 body = {"messaging_product": "whatsapp", "to": to_digits, "type": "template", "template": {
-                    "name": s.whatsapp_template_name, "language": {"code": s.whatsapp_template_language},
+                    "name": s.whatsapp_template_name, "language": {"code": language},
                     "components": [
                         {"type": "header", "parameters": [{"type": "document", "document": document}]},
                         {"type": "body", "parameters": [{"type": "text", "text": p} for p in template_params]},

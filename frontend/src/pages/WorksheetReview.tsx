@@ -48,6 +48,7 @@ export default function WorksheetReview() {
   const { busy, run } = useAction();
   const [editing, setEditing] = useState<Content | null>(null);
   const [regen, setRegen] = useState(false);
+  const [another, setAnother] = useState(false);
   const [override, setOverride] = useState(false);
   const [passage, setPassage] = useState<string | null>(null);
 
@@ -81,6 +82,11 @@ export default function WorksheetReview() {
     if (JSON.stringify(editing) !== JSON.stringify(toEditable(d!.content)) && !window.confirm('Discard your changes?')) return;
     setEditing(null);
   }
+  async function doAnother(reason: string) {
+    const r = await run('another', () => api.post(`/api/worksheets/${d!.id}/another`, { reason }),
+      'Making another worksheet with new questions. It will appear in “Check worksheets” in a minute or two.');
+    if (r) { setAnother(false); nav('/review'); }
+  }
   async function doRegen(reason: string) {
     const r = await run('regen', () => api.post(`/api/worksheets/${d!.id}/regenerate`, { reason }),
       'Regenerating. The new version replaces this one when it is ready.');
@@ -94,7 +100,10 @@ export default function WorksheetReview() {
     {!editing ? (d.status === 'awaiting-approval'
       ? <Button variant="primary" icon="check" onClick={() => approve()} disabled={busy === 'approve'}>Approve &amp; release</Button>
       : admin ? <Button variant="danger" onClick={() => setOverride(true)}>Release anyway</Button> : null) : null}
-  </> : d.status === 'released' ? <Button icon="send" onClick={() => nav(`/delivery/${d.id}`)}>Delivery status</Button> : null;
+  </> : d.status === 'released' ? <>
+    <Button icon="plus" onClick={() => setAnother(true)} title="A fresh practice sheet for the same exam, with new questions">Make another worksheet</Button>
+    <Button icon="send" onClick={() => nav(`/delivery/${d.id}`)}>Delivery status</Button>
+  </> : null;
 
   const content = editing ?? d.content;
   const update = (fn: (c: Content) => void) => { const c = structuredClone(editing!); fn(c); setEditing(c); };
@@ -232,6 +241,7 @@ export default function WorksheetReview() {
         </Dialog>
       ) : null}
       {regen ? <RegenDialog onClose={() => setRegen(false)} onSubmit={doRegen} busy={busy === 'regen'} /> : null}
+      {another ? <AnotherDialog subject={d.subject} onClose={() => setAnother(false)} onSubmit={doAnother} busy={busy === 'another'} /> : null}
       {override ? <OverrideDialog onClose={() => setOverride(false)} onSubmit={(note) => approve(true, note)} checks={failedChecks} /> : null}
     </Layout>
   );
@@ -313,6 +323,21 @@ function QuestionEditor({ q, type, refLabel, labels, flagged, first, last, onCha
         <span className="muted-sm">This question goes beyond the exam syllabus (it will not be released until fixed)</span>
       </label>
     </div>
+  );
+}
+
+function AnotherDialog({ subject, onClose, onSubmit, busy }: { subject: string; onClose: () => void; onSubmit: (r: string) => void; busy: boolean }) {
+  const [reason, setReason] = useState('');
+  return (
+    <Dialog title={`Another ${subject} worksheet`} onClose={onClose}
+      footer={<><Button variant="quiet" onClick={onClose}>Cancel</Button>
+        <Button variant="primary" icon="plus" disabled={busy} onClick={() => onSubmit(reason.trim() || 'Extra practice')}>Make it</Button></>}>
+      <div>A fresh practice sheet for the same exam and syllabus, with <b>new questions</b>: the ones already sent are not repeated.
+        You’ll check it in “Check worksheets”, then it is sent to the same students. The sheet already sent stays as it is.</div>
+      <label className="field"><span>Note (optional)</span>
+        <textarea className="textarea" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. More numerical questions on equations of motion" />
+        <small>Kept in the activity log.</small></label>
+    </Dialog>
   );
 }
 

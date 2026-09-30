@@ -80,6 +80,16 @@ class Plan:
     settings: dict
     passages: list[Passage] = field(default_factory=list)
     topics: list[str] = field(default_factory=list)
+    avoid: list[str] = field(default_factory=list)  # questions already used for this exam (new versions only)
+
+
+def previous_questions(db: Session, exam_id: int) -> list[str]:
+    """Every question already written for this exam, newest version first, so a new version doesn't repeat them."""
+    out: list[str] = []
+    for w in db.scalars(select(Worksheet).where(Worksheet.exam_id == exam_id).order_by(Worksheet.version.desc())):
+        for s in w.content.get("sections", []):
+            out.extend(q.get("text", "") for q in s.get("questions", []) if q.get("text"))
+    return list(dict.fromkeys(out))
 
 
 def prepare(db: Session, job: Job) -> Plan:
@@ -154,6 +164,12 @@ def _brief(plan: Plan) -> str:
         "In coverage_plan, list each topic you covered with the question refs that cover it, where a ref is the "
         "section letter (A for the first section you emit, B for the next, …) and question number, like \"A-2\".",
     ]
+    if plan.avoid:
+        lines += ["", "<already_used>",
+                  "Students have already practised the questions below for this exam. Write NEW questions: do not "
+                  "repeat or lightly reword any of them. Test the same syllabus from different angles (other examples, "
+                  "numbers, contexts and parts of each topic).",
+                  *[f"- {t[:220]}" for t in plan.avoid[:60]], "</already_used>"]
     if settings.get("language") == "Hindi":
         lines += ["", "<language>",
                   "Write the whole worksheet in Hindi (Devanagari script): title, instructions, questions, options and answers. "
@@ -345,6 +361,8 @@ def create_worksheet(db: Session, job: Job) -> Worksheet:
     """Raises Pending while a batch request is in flight; BlockedError when configuration is missing."""
     plan = prepare(db, job)
     cfg = get_settings()
+    if job.source in ("regenerate", "extra"):
+        plan.avoid = previous_questions(db, plan.exam.id)
     payload = job.payload or {}
 
     # A batch submitted on an earlier tick: collect the result, or give up waiting and call directly.
@@ -367,7 +385,7 @@ def create_worksheet(db: Session, job: Job) -> Worksheet:
 
     # Reuse a matching worksheet from another section or class (not for explicit regenerations). If the matching
     # worksheet is still being written in a batch, wait for it rather than paying to write it twice.
-    reusing = get_setting(db, "reuse_worksheets") and job.source != "regenerate"
+    reusing = get_setting(db, "reuse_worksheets") and job.source not in ("regenerate", "extra")
     key = reuse_key(plan)
     if reusing:
         src = find_reusable(db, plan)
@@ -407,7 +425,7 @@ def finalize(db: Session, job: Job, plan: Plan, content: dict, generator: str) -
                    sections=exam.sections, exam_code=exam.exam_code, exam_date=exam.exam_date, version=version,
                    title=content.get("title") or standard_title(exam, sc.grade, plan.settings["language"]), content=content,
                    settings_used=plan.settings, validation=result, sources=sources_for(content, by_id),
-                   generator=generator, regeneration_reason=(job.last_error if job.source == "regenerate" else None))
+                   generator=generator, regeneration_reason=(job.last_error if job.source in ("regenerate", "extra") else None))
     ws.content["_passages"] = {sid: {"text": p.text[:1500], "source": f"{p.filename} v{p.version}", "page": p.page}
                                for sid, p in by_id.items()
                                if any(sid in q.get("source_ids", []) for s in content["sections"] for q in s["questions"])}

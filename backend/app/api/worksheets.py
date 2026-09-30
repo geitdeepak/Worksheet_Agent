@@ -177,6 +177,29 @@ def regen(ws_id: int, body: RegenerateIn, user: User = Depends(current_user), db
     return {"job_id": job.id}
 
 
+class AnotherIn(BaseModel):
+    reason: str = "Extra practice"
+
+
+@router.post("/worksheets/{ws_id}/another")
+def another(ws_id: int, body: AnotherIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """One more practice sheet for the same exam, after a worksheet has already been sent. New questions only;
+    it goes through review and is sent to the same students as a separate delivery."""
+    ws = _ws(db, user, ws_id)
+    if ws.status != "released":
+        raise HTTPException(409, "This worksheet has not been sent yet. Edit or regenerate it instead.")
+    if db.scalar(select(Worksheet.id).where(Worksheet.exam_id == ws.exam_id,
+                                            Worksheet.status.in_(["awaiting-approval", "validation-failed"]))):
+        raise HTTPException(409, "Another worksheet for this exam is already waiting for review. Open it in Check worksheets.")
+    try:
+        job = regenerate(db, ws, body.reason or "Extra practice", user.email, extra=True)
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+    db.commit()
+    worker.poke()
+    return {"job_id": job.id}
+
+
 # ------------------------------------------------------------------------------------ deliveries
 def _deliveries(db: Session, ws: Worksheet) -> list[dict]:
     students = {s.id: s for s in db.scalars(select(Student).where(Student.class_id == ws.class_id))}

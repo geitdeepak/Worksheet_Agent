@@ -136,8 +136,11 @@ WhatsApp numbers are skipped and logged; provider outages retry per delivery.
 ## Phase 2 — WhatsApp
 
 1. Configure the WhatsApp Business Platform: `WHATSAPP_PROVIDER=cloud_api`, `WHATSAPP_PHONE_NUMBER_ID`,
-   `WHATSAPP_ACCESS_TOKEN`. Business-initiated messages need an approved template: set `WHATSAPP_TEMPLATE_NAME` to a
-   template with a DOCUMENT header and three body parameters (subject, class, exam date).
+   `WHATSAPP_ACCESS_TOKEN`. Business-initiated messages need a template approved by Meta. Create the
+   `exam_practice_sheet` template from [whatsapp_template.py](backend/app/channels/whatsapp_template.py) in WhatsApp
+   Manager (category Utility, DOCUMENT header, the body and footer text given there, in English `en` and Hindi `hi`),
+   then set `WHATSAPP_TEMPLATE_NAME=exam_practice_sheet`. Each worksheet goes out in its own language.
+   Emails use [email_template.py](backend/app/channels/email_template.py).
 2. Optional delivery receipts: set `WHATSAPP_WEBHOOK_VERIFY_TOKEN` and point the webhook at `/api/webhooks/whatsapp`.
 3. In **Settings**, turn on *Phase 2*, then enable WhatsApp per class in **Class › Delivery**.
 
