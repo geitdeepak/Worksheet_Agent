@@ -356,7 +356,13 @@ export function AppShell(p: {
           <div className="psa-top-actions">{p.actions}</div>
         </header>
         <main className="psa-content">{p.children}</main>
+        <SiteFooter />
       </div>
     </div>
   );
+}
+
+/* ---- SiteFooter: credit line at the bottom of every page ---- */
+export function SiteFooter({ className }: { className?: string }) {
+  return <footer className={cx('psa-footer', className)}>Developed by Deepak Kumar Tyagi</footer>;
 }

@@ -288,6 +288,11 @@ label.psa-btn.is-disabled { opacity: .5; pointer-events: none; }
 .login-dots { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
 .login-form-wrap { position: relative; }
 .login-theme { position: absolute; top: var(--space-5); right: var(--space-5); }
+
+/* Credit line at the bottom of every page */
+.psa-footer { margin-top: auto; padding: var(--space-4); text-align: center; font-size: 13px; line-height: 20px; color: var(--ink-muted);
+  border-top: 1px solid var(--line); }
+.login-footer { position: absolute; left: 0; right: 0; bottom: 0; border-top: 0; }
 .login-dots span { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; font-weight: 800; font-size: 14px;
   color: var(--on-class); background: linear-gradient(135deg, var(--c), var(--c2)); box-shadow: 0 4px 12px rgba(0, 0, 0, .2); }
 

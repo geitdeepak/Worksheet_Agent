@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { api, setToken } from '../api';
 import { ThemeToggle, useAuth, type User } from '../app';
-import { Banner, Button, classTone } from '../components/ds';
+import { Banner, Button, SiteFooter, classTone } from '../components/ds';
 
 const CLASSES = Array.from({ length: 12 }, (_, i) => String(i + 1));
 
@@ -60,6 +60,7 @@ export default function Login() {
           <Button variant="primary" type="submit" disabled={busy} style={{ justifyContent: 'center' }}>{busy ? 'Signing in…' : 'Sign in'}</Button>
           <div className="muted-sm" style={{ textAlign: 'center' }}>Forgot your password? Ask an administrator to reset it.</div>
         </form>
+        <SiteFooter className="login-footer" />
       </div>
     </div>
   );
