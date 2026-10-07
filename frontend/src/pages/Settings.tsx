@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
-import { Dialog, Layout, LoadState, useAction, useAuth, useClassList, useIsAdmin, useLoad, type User } from '../app';
+import { Dialog, Layout, LoadState, useAction, useAuth, useClassList, useIsAdmin, useLoad, useToast, type User } from '../app';
 import { Banner, Button, Card, DataTable, StatusBadge, Switch } from '../components/ds';
 import { SettingsEditor, type WSettings } from './workspace/WorksheetSettingsTab';
 
@@ -113,13 +113,23 @@ function UsersCard() {
   const { data, reload } = useLoad<Person[]>('/api/users');
   const { classes } = useClassList();
   const { user: me } = useAuth();
-  const [edit, setEdit] = useState<(Partial<Person> & { password?: string }) | null>(null);
+  const [edit, setEdit] = useState<(Partial<Person> & { password?: string; notify?: boolean }) | null>(null);
   const { busy, run } = useAction();
+  const toast = useToast();
+  // A parent can be emailed their login details: when added, or when the admin sets a new password.
+  const canNotify = edit?.role === 'parent' && (!edit.id || !!edit.password);
 
   async function save() {
-    const body = { email: edit!.email, name: edit!.name, role: edit!.role ?? 'teacher', password: edit!.password || null, class_access: edit!.class_access ?? [], student_ids: edit!.student_ids ?? [], active: edit!.active ?? true };
-    const r = await run('u', () => edit!.id ? api.patch(`/api/users/${edit!.id}`, body) : api.post('/api/users', body), 'User saved.');
-    if (r) { setEdit(null); reload(); }
+    const body = { email: edit!.email, name: edit!.name, role: edit!.role ?? 'teacher', password: edit!.password || null, class_access: edit!.class_access ?? [], student_ids: edit!.student_ids ?? [], active: edit!.active ?? true,
+      notify: canNotify && (edit!.notify ?? true), login_url: `${window.location.origin}/login` };
+    const r = await run('u', () => edit!.id ? api.patch<{ email_sent?: boolean; email_error?: string | null }>(`/api/users/${edit!.id}`, body)
+      : api.post<{ email_sent?: boolean; email_error?: string | null }>('/api/users', body));
+    if (!r) return;
+    if (r.email_sent) toast('success', `Saved. The login details were emailed to ${body.email}.`);
+    else if (r.email_sent === false) toast('warning', `Saved, but the email could not be sent: ${r.email_error}`);
+    else toast('success', 'User saved.');
+    setEdit(null);
+    reload();
   }
   return (
     <Card title="People" flush actions={<Button size="sm" icon="plus" onClick={() => setEdit({ role: 'teacher', class_access: [], student_ids: [], children: [], active: true })}>Add</Button>}>
@@ -150,6 +160,11 @@ function UsersCard() {
             <ChildPicker value={edit.student_ids ?? []} known={edit.children ?? []}
               onChange={(student_ids, children) => setEdit({ ...edit, student_ids, children })} />
           ) : <Banner>Administrators can see and change every class.</Banner>}
+          {canNotify ? (
+            <Switch on={edit.notify ?? true} onChange={(v) => setEdit({ ...edit, notify: v })}
+              label={edit.id ? 'Email the new password to the parent' : 'Email the login details to the parent'}
+              description={`Sends ${edit.email || 'the parent'} the sign-in link, their email and password, and which children they can make practice sheets for.`} />
+          ) : null}
           {edit.id && edit.id !== me?.id ? <Switch on={edit.active ?? true} onChange={(v) => setEdit({ ...edit, active: v })} label="Active" description="Disabled people can’t sign in." /> : null}
         </Dialog>
       ) : null}

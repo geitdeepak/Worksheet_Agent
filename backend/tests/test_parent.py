@@ -16,6 +16,20 @@ def _login(client, email, password) -> dict:
     return {"Authorization": f"Bearer {r.json()['token']}"}
 
 
+def _outbox() -> set:
+    from app.config import get_settings
+    folder = get_settings().outbox_dir / "email"
+    return set(folder.glob("*.eml")) if folder.exists() else set()
+
+
+def _read_eml(path) -> tuple[str, str]:
+    """(subject, plain-text body) of an outbox email."""
+    from email import policy
+    from email.parser import BytesParser
+    msg = BytesParser(policy=policy.default).parsebytes(path.read_bytes())
+    return msg["Subject"], msg.get_body(preferencelist=("plain",)).get_content()
+
+
 def _drain():
     with SessionLocal() as db:
         worker_tick(db)
@@ -107,6 +121,37 @@ def test_parent_makes_private_practice_sheets(client, fake_claude):  # noqa: F81
         db.commit()
     assert client.post("/api/parent/sheets", headers=p1, json={"student_id": asha, "subject": "Physics"}).status_code == 200
     _drain()
+
+    # Emailing the login details: on create (when asked), and when the admin sets a new password.
+    before = _outbox()
+    r = client.post("/api/users", json={"email": "meena.parent@example.com", "name": "Meena's Parent", "role": "parent",
+                                        "password": "welcome-pass-9", "student_ids": [students["P203"]], "notify": True,
+                                        "login_url": "https://school.example.org/login"})
+    assert r.status_code == 200 and r.json()["email_sent"] is True, r.text
+    (new,) = _outbox() - before
+    subject, body = _read_eml(new)
+    assert "Your login for practice sheets" in subject
+    for expected in ("meena.parent@example.com", "welcome-pass-9", "https://school.example.org/login", "Meena (Class 2-B)"):
+        assert expected in body, expected
+    mid = r.json()["id"]
+    before = _outbox()
+    patch = {"email": "meena.parent@example.com", "name": "Meena's Parent", "role": "parent", "student_ids": [students["P203"]],
+             "notify": True}
+    assert "email_sent" not in client.patch(f"/api/users/{mid}", json=patch).json()  # no new password: nothing to send
+    r = client.patch(f"/api/users/{mid}", json={**patch, "password": "changed-pass-7"})
+    assert r.json()["email_sent"] is True
+    (new,) = _outbox() - before
+    subject, body = _read_eml(new)
+    assert "new password" in subject.lower() and "changed-pass-7" in body
+    assert _login(client, "meena.parent@example.com", "changed-pass-7")
+    # Without "notify" nothing is sent, and passwords never reach the activity log.
+    before = _outbox()
+    client.post("/api/users", json={"email": "quiet.parent@example.com", "name": "Quiet", "role": "parent",
+                                    "password": "quiet-pass-11", "student_ids": [asha]})
+    assert _outbox() == before
+    summaries = " ".join(a["summary"] + str(a["details"]) for a in client.get("/api/audit?limit=500").json())
+    assert "Emailed login details to meena.parent@example.com" in summaries
+    assert "welcome-pass-9" not in summaries and "changed-pass-7" not in summaries
 
     # A disabled parent can't sign in.
     pid = next(u["id"] for u in client.get("/api/users").json() if u["email"] == "ravi.parent@example.com")

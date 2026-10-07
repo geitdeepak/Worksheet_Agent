@@ -1,4 +1,5 @@
 """Auth, users, institution settings, dashboard, history (audit), scheduler control, webhooks."""
+import re
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -69,9 +70,40 @@ class UserIn(BaseModel):
     class_access: list[int] = []
     student_ids: list[int] = []  # parents only: their children
     active: bool = True
+    notify: bool = False  # parents only: email them the login details (on create, or when a new password is set)
+    login_url: str | None = None  # the sign-in page as the admin sees it (the app's public address)
 
 
 ROLES = ("admin", "teacher", "parent")
+
+
+def _login_url(request: Request, given: str | None) -> str:
+    if given and re.fullmatch(r"https?://[^\s\"'<>]{1,300}", given.strip()):
+        return given.strip()
+    return str(request.base_url).rstrip("/") + "/login"
+
+
+def _email_login(db: Session, request: Request, u: User, body: UserIn, new_account: bool, admin: User) -> dict:
+    """Send a parent their login details. The account is saved either way; the result tells the admin if it failed.
+    The password is only in the email itself, never in the audit log."""
+    from ..channels import PermanentError, TransientError
+    from ..channels.account_email import render_parent_login
+    from ..channels.email import send_email
+    from ..services.common import valid_email
+    if not valid_email(u.email):
+        return {"email_sent": False, "email_error": f"{u.email} is not a valid email address."}
+    kids = db.scalars(select(Student).where(Student.id.in_(u.student_ids or []))).all()
+    names = {c.id: c.name for c in db.scalars(select(SchoolClass))}
+    children = [f"{s.name} ({names.get(s.class_id, '')}-{s.section})" for s in kids]
+    subject, text, html = render_parent_login(db, u.name, u.email, body.password, children,
+                                              _login_url(request, body.login_url), new_account)
+    try:
+        send_email(u.email, subject, text, html, None)
+    except (PermanentError, TransientError) as e:
+        audit(db, "user", f"Could not email login details to {u.email}: {e}", actor=admin.email, level="warning")
+        return {"email_sent": False, "email_error": str(e)}
+    audit(db, "user", f"Emailed login details to {u.email}", actor=admin.email)
+    return {"email_sent": True, "email_error": None}
 
 
 def _access_for(db: Session, body: UserIn) -> tuple[list[int], list[int]]:
@@ -104,7 +136,7 @@ def list_users(_: User = Depends(require_admin), db: Session = Depends(get_db)):
 
 
 @router.post("/users")
-def create_user(body: UserIn, admin: User = Depends(require_admin), db: Session = Depends(get_db)):
+def create_user(body: UserIn, request: Request, admin: User = Depends(require_admin), db: Session = Depends(get_db)):
     class_access, student_ids = _access_for(db, body)
     if not body.password or len(body.password) < 8:
         raise HTTPException(400, "Set a password of at least 8 characters.")
@@ -115,11 +147,14 @@ def create_user(body: UserIn, admin: User = Depends(require_admin), db: Session 
     db.add(u)
     audit(db, "user", f"Added {body.role} {u.email}", actor=admin.email)
     db.commit()
-    return user_out(u)
+    sent = _email_login(db, request, u, body, True, admin) if body.notify and u.role == "parent" else {}
+    db.commit()
+    return {**user_out(u), **sent}
 
 
 @router.patch("/users/{user_id}")
-def update_user(user_id: int, body: UserIn, admin: User = Depends(require_admin), db: Session = Depends(get_db)):
+def update_user(user_id: int, body: UserIn, request: Request, admin: User = Depends(require_admin),
+                db: Session = Depends(get_db)):
     u = db.get(User, user_id)
     if u is None:
         raise HTTPException(404, "User not found.")
@@ -128,10 +163,16 @@ def update_user(user_id: int, body: UserIn, admin: User = Depends(require_admin)
     u.class_access, u.student_ids = _access_for(db, body)
     u.name, u.role, u.active = body.name, body.role, body.active
     if body.password:
+        if len(body.password) < 8:
+            raise HTTPException(400, "Set a password of at least 8 characters.")
         u.password_hash = hash_password(body.password)
     audit(db, "user", f"Updated {u.email}", actor=admin.email)
     db.commit()
-    return user_out(u)
+    # A new password can be emailed to a parent; without one there is nothing to send (passwords are not stored).
+    sent = (_email_login(db, request, u, body, False, admin)
+            if body.notify and body.password and u.role == "parent" and u.active else {})
+    db.commit()
+    return {**user_out(u), **sent}
 
 
 # -------------------------------------------------------------------------------------- settings
