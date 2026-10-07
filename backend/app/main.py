@@ -6,7 +6,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 
-from .api import admin, classes, worksheets
+from .api import admin, classes, parent, worksheets
 from .config import get_settings
 from .db import Base, SessionLocal, engine
 from .models import User
@@ -71,6 +71,7 @@ app = FastAPI(title="Practice Sheet Agent", lifespan=lifespan)
 app.include_router(admin.router)
 app.include_router(classes.router)
 app.include_router(worksheets.router)
+app.include_router(parent.router)
 
 
 @app.exception_handler(Exception)

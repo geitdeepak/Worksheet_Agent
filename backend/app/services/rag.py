@@ -105,10 +105,11 @@ def scope_passages(passages: list[Passage], scope: dict) -> list[Passage]:
     excluded = set(scope.get("excluded_chapters") or [])
     content = [p for p in content if chapter_number(p.chapter) not in excluded]  # exclusions always win
     chapters = set(scope.get("chapters") or [])
+    labels = set(scope.get("chapter_labels") or [])  # exact document chapter labels (a parent's choice)
     keep: dict[int, Passage] = {}
-    if chapters:
+    if chapters or labels:
         for p in content:
-            if chapter_number(p.chapter) in chapters:
+            if chapter_number(p.chapter) in chapters or p.chapter in labels:
                 keep[p.chunk_id] = p
     # Topic matching catches material in files without chapter numbers (e.g. 'Physics.pdf').
     topics = scope.get("topics") or []

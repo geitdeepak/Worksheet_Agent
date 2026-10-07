@@ -58,6 +58,19 @@ def require_admin(user: User = Depends(current_user)) -> User:
     return user
 
 
+def require_staff(user: User = Depends(current_user)) -> User:
+    """Administrators and teachers. Parents only reach their own practice-sheet pages."""
+    if user.role not in ("admin", "teacher"):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only school staff can do this.")
+    return user
+
+
+def require_parent(user: User = Depends(current_user)) -> User:
+    if user.role != "parent":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "This page is for parents.")
+    return user
+
+
 def can_access_class(user: User, class_id: int) -> bool:
     return user.role == "admin" or class_id in (user.class_access or [])
 

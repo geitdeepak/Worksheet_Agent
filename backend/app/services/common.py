@@ -65,6 +65,7 @@ def _defaults() -> dict:
         # Cost saving
         "reuse_worksheets": True,  # reuse another section's/class's worksheet with the same syllabus this term
         "use_batch": True,  # Batch API for scheduled worksheets (50% cheaper)
+        "parent_daily_limit": 3,  # practice sheets a parent can make per child per day (each one is an AI call)
     }
 
 

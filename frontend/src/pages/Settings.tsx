@@ -6,7 +6,7 @@ import { SettingsEditor, type WSettings } from './workspace/WorksheetSettingsTab
 
 interface AppSettings {
   institution_name: string; timezone: string; scheduler_time: string; lead_days: number; phase: number; worksheet_defaults: WSettings;
-  reuse_worksheets: boolean; use_batch: boolean;
+  reuse_worksheets: boolean; use_batch: boolean; parent_daily_limit: number;
   providers: { llm: string; llm_model: string | null; llm_effort: string; llm_context_chars: number; email: string; whatsapp: string };
 }
 const LABELS: Record<string, string> = { mcq: 'Multiple choice', very_short: 'Very short answer', short: 'Short answer', application: 'Application based', long: 'Long answer', hots: 'Higher order thinking (HOTS)' };
@@ -52,6 +52,10 @@ export default function Settings() {
                 <Switch on={draft.use_batch} disabled={!admin} label="Use the cheaper batch service for scheduled worksheets"
                   description="Half the AI price. Scheduled worksheets take minutes to a few hours instead of seconds, which is fine because they are made two days ahead. “Make it now” is always immediate."
                   onChange={(v) => setDraft({ ...draft, use_batch: v })} />
+                <label className="field" style={{ maxWidth: 320 }}><span>Parent practice sheets per child per day</span>
+                  <input className="input" type="number" min={1} max={20} disabled={!admin} value={draft.parent_daily_limit}
+                    onChange={(e) => setDraft({ ...draft, parent_daily_limit: Number(e.target.value) })} />
+                  <small>Each sheet a parent makes is one AI request. Failed attempts don’t count.</small></label>
                 {draft.providers.llm !== 'offline' ? (
                   <div className="help">Model: <b>{draft.providers.llm_model}</b> at <b>{draft.providers.llm_effort}</b> effort, using up to
                     {' '}<b>{Math.round(draft.providers.llm_context_chars / 1000)}k characters</b> of the most relevant in-syllabus pages per worksheet.
@@ -87,7 +91,7 @@ export default function Settings() {
   );
 }
 
-function PasswordCard() {
+export function PasswordCard() {
   const [f, setF] = useState({ current: '', new: '' });
   const { busy, run } = useAction();
   return (
@@ -101,23 +105,29 @@ function PasswordCard() {
   );
 }
 
+interface ChildRef { id: number; name: string; class: string | null; section: string }
+type Person = User & { active: boolean; children: ChildRef[] };
+const ROLE_LABEL: Record<User['role'], string> = { admin: 'Administrator', teacher: 'Teacher', parent: 'Parent' };
+
 function UsersCard() {
-  const { data, reload } = useLoad<(User & { active: boolean })[]>('/api/users');
+  const { data, reload } = useLoad<Person[]>('/api/users');
   const { classes } = useClassList();
   const { user: me } = useAuth();
-  const [edit, setEdit] = useState<(Partial<User> & { password?: string; active?: boolean }) | null>(null);
+  const [edit, setEdit] = useState<(Partial<Person> & { password?: string }) | null>(null);
   const { busy, run } = useAction();
 
   async function save() {
-    const body = { email: edit!.email, name: edit!.name, role: edit!.role ?? 'teacher', password: edit!.password || null, class_access: edit!.class_access ?? [], active: edit!.active ?? true };
+    const body = { email: edit!.email, name: edit!.name, role: edit!.role ?? 'teacher', password: edit!.password || null, class_access: edit!.class_access ?? [], student_ids: edit!.student_ids ?? [], active: edit!.active ?? true };
     const r = await run('u', () => edit!.id ? api.patch(`/api/users/${edit!.id}`, body) : api.post('/api/users', body), 'User saved.');
     if (r) { setEdit(null); reload(); }
   }
   return (
-    <Card title="People" flush actions={<Button size="sm" icon="plus" onClick={() => setEdit({ role: 'teacher', class_access: [], active: true })}>Add</Button>}>
+    <Card title="People" flush actions={<Button size="sm" icon="plus" onClick={() => setEdit({ role: 'teacher', class_access: [], student_ids: [], children: [], active: true })}>Add</Button>}>
       <DataTable onRowClick={(u) => setEdit({ ...u })}
-        columns={[{ key: 'name', label: 'Name' }, { key: 'role', label: 'Role' },
-          { key: 'access', label: 'Classes', render: (u) => u.role === 'admin' ? 'All' : (u.class_access.map((id) => classes.find((c) => c.id === id)?.name).filter(Boolean).join(', ') || 'None') },
+        columns={[{ key: 'name', label: 'Name' }, { key: 'role', label: 'Role', render: (u) => ROLE_LABEL[u.role] ?? u.role },
+          { key: 'access', label: 'Access', minWidth: 170, render: (u) => u.role === 'admin' ? 'All classes'
+            : u.role === 'parent' ? (u.children.map((k) => `${k.name} (${k.class}-${k.section})`).join(', ') || 'No child linked')
+            : (u.class_access.map((id) => classes.find((c) => c.id === id)?.name).filter(Boolean).join(', ') || 'None') },
           { key: 'active', label: 'Status', render: (u) => u.active ? <StatusBadge status="active" /> : <StatusBadge status="cancelled">Disabled</StatusBadge> }]}
         rows={data ?? []} />
       {edit ? (
@@ -127,7 +137,7 @@ function UsersCard() {
             {!edit.id ? <label className="field"><span>Email</span><input className="input" type="email" value={edit.email ?? ''} onChange={(e) => setEdit({ ...edit, email: e.target.value })} /></label> : null}
             <label className="field"><span>Name</span><input className="input" value={edit.name ?? ''} onChange={(e) => setEdit({ ...edit, name: e.target.value })} /></label>
             <label className="field"><span>Role</span><select className="select" value={edit.role} disabled={edit.id === me?.id} onChange={(e) => setEdit({ ...edit, role: e.target.value as User['role'] })}>
-              <option value="teacher">Teacher</option><option value="admin">Administrator</option></select></label>
+              <option value="teacher">Teacher</option><option value="parent">Parent</option><option value="admin">Administrator</option></select></label>
             <label className="field"><span>{edit.id ? 'New password (optional)' : 'Password'}</span><input className="input" type="password" value={edit.password ?? ''} onChange={(e) => setEdit({ ...edit, password: e.target.value })} /></label>
           </div>
           {edit.role === 'teacher' ? (
@@ -136,10 +146,54 @@ function UsersCard() {
                 <label key={c.id} className="row" style={{ gap: 6 }}><input type="checkbox" checked={edit.class_access?.includes(c.id) ?? false}
                   onChange={(e) => setEdit({ ...edit, class_access: e.target.checked ? [...(edit.class_access ?? []), c.id] : (edit.class_access ?? []).filter((x) => x !== c.id) })} />{c.name}</label>
               ))}</div></div>
+          ) : edit.role === 'parent' ? (
+            <ChildPicker value={edit.student_ids ?? []} known={edit.children ?? []}
+              onChange={(student_ids, children) => setEdit({ ...edit, student_ids, children })} />
           ) : <Banner>Administrators can see and change every class.</Banner>}
           {edit.id && edit.id !== me?.id ? <Switch on={edit.active ?? true} onChange={(v) => setEdit({ ...edit, active: v })} label="Active" description="Disabled people can’t sign in." /> : null}
         </Dialog>
       ) : null}
     </Card>
+  );
+}
+
+/** Link a parent to their children: pick a class, then tick the children. */
+function ChildPicker({ value, known, onChange }: { value: number[]; known: ChildRef[]; onChange: (ids: number[], kids: ChildRef[]) => void }) {
+  const { classes } = useClassList();
+  const [classId, setClassId] = useState<number | null>(classes[0]?.id ?? null);
+  const { data } = useLoad<{ students: { id: number; student_code: string; name: string; section: string; active: boolean }[] }>(
+    classId ? `/api/classes/${classId}/students` : null);
+  const className = classes.find((c) => c.id === classId)?.name ?? null;
+  const linked = known.filter((k) => value.includes(k.id));
+
+  function toggle(s: { id: number; name: string; section: string }, on: boolean) {
+    if (on) onChange([...value, s.id], [...linked, { id: s.id, name: s.name, class: className, section: s.section }]);
+    else onChange(value.filter((x) => x !== s.id), linked.filter((k) => k.id !== s.id));
+  }
+  return (
+    <div className="stack-sm">
+      <div className="field"><span>Children this parent can make practice sheets for</span>
+        {linked.length ? (
+          <div className="chapter-picks">{linked.map((k) => (
+            <button key={k.id} type="button" className="chapter-pick is-on" onClick={() => toggle(k, false)} title="Remove">
+              {k.name} · {k.class}-{k.section} ✕</button>
+          ))}</div>
+        ) : <div className="muted-sm">No child linked yet. Choose a class and tick the child below.</div>}
+      </div>
+      <label className="field"><span>Find a child in</span>
+        <select className="select" value={classId ?? ''} onChange={(e) => setClassId(Number(e.target.value))}>
+          {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+      </label>
+      <div className="child-list">
+        {(data?.students ?? []).filter((s) => s.active).map((s) => (
+          <label key={s.id} className="row" style={{ gap: 8 }}>
+            <input type="checkbox" checked={value.includes(s.id)} onChange={(e) => toggle(s, e.target.checked)} />
+            {s.name} <span className="muted-sm">· {s.student_code} · Section {s.section}</span>
+          </label>
+        ))}
+        {data && !data.students.length ? <div className="muted-sm">No students in this class yet.</div> : null}
+      </div>
+    </div>
   );
 }

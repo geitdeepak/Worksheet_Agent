@@ -85,7 +85,7 @@ export default function Dashboard() {
               onRowClick={(r) => r.worksheet_id && nav(r.type === 'SHARE_WORKSHEET' ? `/delivery/${r.worksheet_id}` : `/review/${r.worksheet_id}`)}
               columns={[
                 { key: 'time', label: 'Time', mono: true },
-                { key: 'type', label: 'What', render: (r) => r.type === 'SHARE_WORKSHEET' ? 'Send worksheet' : 'Make worksheet' },
+                { key: 'type', label: 'What', render: (r) => r.type === 'SHARE_WORKSHEET' ? 'Send worksheet' : r.type === 'PARENT_WORKSHEET' ? 'Parent practice sheet' : 'Make worksheet' },
                 { key: 'class', label: 'Class', render: (r) => <ClassChip name={r.class} /> },
                 { key: 'subject', label: 'Subject' },
                 { key: 'exam', label: 'Exam' },

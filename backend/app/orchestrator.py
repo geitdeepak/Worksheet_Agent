@@ -12,10 +12,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .agents import sharing_agent
-from .agents.creation_agent import BlockedError, Pending, create_worksheet, find_subject
+from .agents.creation_agent import BlockedError, Pending, create_parent_sheet, create_worksheet, find_subject
 from .agents.llm import LLMError
 from .config import get_settings
-from .models import Document, Exam, Job, SchoolClass, Worksheet, utcnow
+from .models import Document, Exam, Job, ParentSheet, SchoolClass, Worksheet, utcnow
 from .services.common import audit, fmt_date, get_setting, local_now, local_today, set_setting
 
 log = logging.getLogger("psa.orchestrator")
@@ -215,6 +215,8 @@ def run_job(db: Session, job: Job) -> None:
             _run_create(db, job)
         elif job.type == "SHARE_WORKSHEET":
             _run_share(db, job)
+        elif job.type == "PARENT_WORKSHEET":
+            _run_parent(db, job)
         db.commit()
     except Pending:
         # Batch request in flight: keep the payload, check again in a few minutes. Not a failed attempt.
@@ -226,6 +228,7 @@ def run_job(db: Session, job: Job) -> None:
         db.rollback()
         job = db.get(Job, job.id)
         job.status, job.last_error = "failed", str(e)
+        _fail_parent_sheet(db, job, str(e))
         audit(db, "alert", f"{job.subject_name} · {e}", class_id=job.class_id, level="error", job_id=job.id)
         db.commit()
     except Exception as e:  # noqa: BLE001 — every other failure is retried, then surfaced
@@ -236,6 +239,8 @@ def run_job(db: Session, job: Job) -> None:
         job.last_error = msg
         if job.attempts >= get_settings().job_max_attempts:
             job.status = "failed"
+            _fail_parent_sheet(db, job, "The sheet could not be made right now. Please try again later; "
+                                        "this attempt is not counted.")
             audit(db, "alert", f"{job.type} failed after {job.attempts} attempts · {job.subject_name} · {msg}",
                   class_id=job.class_id, level="error", job_id=job.id)
         else:
@@ -281,6 +286,27 @@ def _run_share(db: Session, job: Job) -> None:
     audit(db, "delivery", f"Shared {ws.title} · " + "; ".join(
         f"{ch}: " + ", ".join(f"{n} {st}" for st, n in sorted(v.items())) for ch, v in summary.items()),
           class_id=ws.class_id, worksheet_id=ws.id, counts=summary)
+
+
+def _run_parent(db: Session, job: Job) -> None:
+    sheet = db.get(ParentSheet, (job.payload or {}).get("parent_sheet_id"))
+    if sheet is None:
+        job.status, job.last_error = "cancelled", "The practice sheet was removed."
+        return
+    create_parent_sheet(db, sheet)
+    job.status = "completed" if sheet.status == "ready" else "failed"
+    job.last_error = sheet.error
+    audit(db, "parent", f"Parent practice sheet · {sheet.subject_name} · {sheet.status}", class_id=job.class_id,
+          job_id=job.id, level="info" if sheet.status == "ready" else "warning", parent_sheet_id=sheet.id)
+
+
+def _fail_parent_sheet(db: Session, job: Job, message: str) -> None:
+    """A parent job that gave up: tell the parent on their page (the failed attempt does not count)."""
+    if job.type != "PARENT_WORKSHEET":
+        return
+    sheet = db.get(ParentSheet, (job.payload or {}).get("parent_sheet_id"))
+    if sheet is not None and sheet.status == "generating":
+        sheet.status, sheet.error = "failed", message
 
 
 def recover_stale_jobs(db: Session) -> int:

@@ -21,10 +21,11 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
-from ..models import Chunk, Document, Exam, Job, SchoolClass, Subject, Worksheet, utcnow
+from ..models import Chunk, Document, Exam, Job, ParentSheet, SchoolClass, Subject, Worksheet, utcnow
 from ..services.common import (SECTION_LABELS, audit, fmt_date, get_setting, is_hindi_subject, merge_worksheet_settings,
                                worksheet_language)
 from ..services.rag import Passage, SubjectIndex, build_context, load_passages, tokenize
+from ..services.syllabus import chapter_number
 from . import llm
 from .mathtext import normalize_content
 from .pdf_render import render_worksheet_pdf
@@ -64,6 +65,13 @@ def standard_title(exam: Exam, grade: str, language: str) -> str:
     return f"{exam.subject_name} Practice Sheet – Class {grade} – Exam {d.day} {d.strftime('%B')}"
 
 
+def practice_title(subject_name: str, grade: str, language: str) -> str:
+    """Title of a parent's practice sheet (not tied to an exam)."""
+    if language == "Hindi":
+        return f"{subject_name} अभ्यास पत्रक – कक्षा {grade}"
+    return f"{subject_name} Practice Sheet – Class {grade}"
+
+
 def standard_instructions(language: str) -> str:
     return ("सभी प्रश्न हल कीजिए। दोहराने के लिए अपनी पाठ्यपुस्तक के अध्याय देखें।" if language == "Hindi"
             else "Answer all questions. Refer to your textbook chapters for revision.")
@@ -74,13 +82,24 @@ def standard_instructions(language: str) -> str:
 @dataclass
 class Plan:
     school_class: SchoolClass
-    exam: Exam
+    exam: Exam | None  # None for a parent's practice sheet
     subject: Subject
-    scope: dict
+    scope: dict | None  # exam syllabus, or the chapters a parent chose; None = all of the subject's material
     settings: dict
     passages: list[Passage] = field(default_factory=list)
     topics: list[str] = field(default_factory=list)
-    avoid: list[str] = field(default_factory=list)  # questions already used for this exam (new versions only)
+    avoid: list[str] = field(default_factory=list)  # questions already practised (new versions, parent sheets)
+    seed: str = ""  # varies the offline generator between practice sheets
+
+    @property
+    def subject_name(self) -> str:
+        return self.exam.subject_name if self.exam else self.subject.name
+
+    def title(self) -> str:
+        lang = self.settings.get("language", "English")
+        if self.exam:
+            return standard_title(self.exam, self.school_class.grade, lang)
+        return practice_title(self.subject_name, self.school_class.grade, lang)
 
 
 def previous_questions(db: Session, exam_id: int) -> list[str]:
@@ -113,14 +132,17 @@ def prepare(db: Session, job: Job) -> Plan:
 
 def load_material(db: Session, plan: Plan) -> None:
     """Retrieve the in-syllabus passages, capped at LLM_CONTEXT_CHARS (most relevant first)."""
-    sc, exam = plan.school_class, plan.exam
+    sc, name = plan.school_class, plan.subject_name
     if not load_passages(db, plan.subject):
-        raise BlockedError(f"{exam.subject_name} has no readable PDFs in {sc.name}. "
+        raise BlockedError(f"{name} has no readable PDFs in {sc.name}. "
                            f"Upload the chapter PDFs in {sc.name} › Study material.")
     plan.passages, plan.topics = build_context(db, plan.subject, get_settings().llm_context_chars, scope=plan.scope)
     if not plan.passages:
-        raise BlockedError(f"None of the {exam.subject_name} PDFs match the exam syllabus "
-                           f"(chapters {', '.join(map(str, plan.scope.get('chapters') or [])) or '—'}). Upload the chapters "
+        chapters = ', '.join(map(str, (plan.scope or {}).get('chapters') or [])) or '—'
+        if plan.exam is None:
+            raise BlockedError(f"None of the {name} PDFs match the chosen chapters ({chapters}).")
+        raise BlockedError(f"None of the {name} PDFs match the exam syllabus "
+                           f"(chapters {chapters}). Upload the chapters "
                            f"it lists, or label each PDF with its chapter number in {sc.name} › Study material.")
 
 
@@ -146,12 +168,17 @@ def _brief(plan: Plan) -> str:
     sc, exam, settings, scope = plan.school_class, plan.exam, plan.settings, plan.scope
     counts = {k: v for k, v in settings["counts"].items() if v}
     total = sum(counts.values())
+    if exam:
+        header = [f"Class: {sc.grade}" + (f" (sections {exam.sections})" if exam.sections else ""),
+                  f"Subject: {exam.subject_name}",
+                  f"Exam: {fmt_date(exam.exam_date)} (exam ID {exam.exam_code})"]
+    else:
+        header = [f"Class: {sc.grade}", f"Subject: {plan.subject_name}",
+                  "Purpose: extra practice at home, requested by a parent (not tied to a particular exam)"]
     lines = [
         "Write a practice worksheet from the approved material above.",
         "",
-        f"Class: {sc.grade}" + (f" (sections {exam.sections})" if exam.sections else ""),
-        f"Subject: {exam.subject_name}",
-        f"Exam: {fmt_date(exam.exam_date)} (exam ID {exam.exam_code})",
+        *header,
         f"Language: {settings.get('language', 'English')}",
         "",
         f"Questions per section type ({total} in total, emit sections in this order):",
@@ -166,7 +193,7 @@ def _brief(plan: Plan) -> str:
     ]
     if plan.avoid:
         lines += ["", "<already_used>",
-                  "Students have already practised the questions below for this exam. Write NEW questions: do not "
+                  f"Students have already practised the questions below{' for this exam' if exam else ''}. Write NEW questions: do not "
                   "repeat or lightly reword any of them. Test the same syllabus from different angles (other examples, "
                   "numbers, contexts and parts of each topic).",
                   *[f"- {t[:220]}" for t in plan.avoid[:60]], "</already_used>"]
@@ -175,21 +202,30 @@ def _brief(plan: Plan) -> str:
                   "Write the whole worksheet in Hindi (Devanagari script): title, instructions, questions, options and answers. "
                   "Use simple, standard Hindi as used in school textbooks (NCERT style)."
                   + (" This is the Hindi language subject: test the Hindi passages themselves (grammar, vocabulary, "
-                     "comprehension, literature) exactly as they are written." if is_hindi_subject(exam.subject_name) else
+                     "comprehension, literature) exactly as they are written." if is_hindi_subject(plan.subject_name) else
                      " If the passages are in English, translate the ideas faithfully; keep standard technical terms and "
                      "you may add the English term in brackets the first time, e.g. परिमेय संख्या (rational number).")
                   + " Keep numbers as 0-9, and keep units, variables and formulas in standard notation.",
-                  "The title follows this form: \"<विषय> अभ्यास पत्रक – कक्षा <n> – परीक्षा <day> <महीना>\".",
+                  ("The title follows this form: \"<विषय> अभ्यास पत्रक – कक्षा <n> – परीक्षा <day> <महीना>\"." if exam
+                   else "The title follows this form: \"<विषय> अभ्यास पत्रक – कक्षा <n>\"."),
                   "</language>"]
     lines += ["", "<notation>",
               "The worksheet is printed as a PDF that cannot render LaTeX or Markdown. Write all maths in plain Unicode "
               "notation: x², a³, √2, ∛27, ¾ or 3/4, π, θ, ×, ÷, ±, ≤, ≥, ≠, ∠ABC, △ABC, 60°, AB ∥ CD, AB ⊥ CD. "
               "Never use $…$, \\frac, \\sqrt, ^{…} or **bold**. For a long fraction use brackets: (x + 1)/(x − 1).",
-              "</notation>", "", "<exam_syllabus>",
-              "This is the school's official syllabus for this exam. It is the boundary: every question must "
-              "test something listed here, even if the passages above mention other material. Flag anything "
-              "that goes beyond it as outside_syllabus.",
-              scope["text"], "</exam_syllabus>"]
+              "</notation>"]
+    if exam:
+        lines += ["", "<exam_syllabus>",
+                  "This is the school's official syllabus for this exam. It is the boundary: every question must "
+                  "test something listed here, even if the passages above mention other material. Flag anything "
+                  "that goes beyond it as outside_syllabus.",
+                  scope["text"], "</exam_syllabus>"]
+    else:
+        lines += ["", "<practice_scope>",
+                  "Every question must be answerable from the approved material above; do not test anything it does not "
+                  "cover, and flag anything that goes beyond it as outside_syllabus."
+                  + (f" The parent chose these chapters only: {scope['text']}." if scope else ""),
+                  f"The title follows this form: \"{plan.title()}\".", "</practice_scope>"]
     return "\n".join(lines)
 
 
@@ -222,7 +258,7 @@ def _difficulty_plan(total: int, mix: dict) -> list[str]:
 
 def generate_offline(plan: Plan) -> dict:
     passages = plan.passages
-    rng = random.Random(f"{plan.exam.id}-{plan.exam.exam_date}")
+    rng = random.Random(f"{plan.exam.id}-{plan.exam.exam_date}" if plan.exam else f"practice-{plan.seed}")
     sents = _sentences(passages)
     if not sents:
         raise BlockedError("The subject PDFs contain no readable text to build questions from.")
@@ -246,7 +282,7 @@ def generate_offline(plan: Plan) -> dict:
             cursor += 1
             difficulty = diffs[min(used, len(diffs) - 1)]
             used += 1
-            topic = next((p.chapter for p in passages if f"C{p.chunk_id}" == sid and p.chapter), plan.exam.subject_name)
+            topic = next((p.chapter for p in passages if f"C{p.chunk_id}" == sid and p.chapter), plan.subject_name)
             if typ == "mcq":
                 others = [t for t in all_terms if t != term]
                 rng.shuffle(others)
@@ -276,7 +312,7 @@ def generate_offline(plan: Plan) -> dict:
             coverage.setdefault(topic, []).append(f"{'ABCDEF'[si]}-{qi + 1}")
         sections.append({"type": typ, "questions": qs})
     lang = plan.settings.get("language", "English")
-    return {"title": standard_title(plan.exam, plan.school_class.grade, lang), "instructions": standard_instructions(lang),
+    return {"title": plan.title(), "instructions": standard_instructions(lang),
             "coverage_plan": [{"topic": t, "question_refs": r} for t, r in coverage.items()], "sections": sections}
 
 
@@ -481,3 +517,74 @@ def revalidate(db: Session, ws: Worksheet) -> dict:
     result = validate(ws.content, ws.settings_used, passages, set(scope["ids"]) if scope else None)
     ws.validation = result
     return result
+
+
+# ------------------------------------------------------------------------------------------- parents
+
+PARENT_ATTEMPTS = 2  # a parent sheet that fails the quality checks is written once more before giving up
+
+
+def _material(db: Session, subject: Subject):
+    return select(Document).where(Document.subject_id == subject.id, Document.active.is_(True),
+                                  Document.extraction == "ok", Document.kind != "syllabus")
+
+
+def has_material(db: Session, subject: Subject) -> bool:
+    return db.scalar(_material(db, subject).with_only_columns(Document.id).limit(1)) is not None
+
+
+def subject_chapters(db: Session, subject: Subject) -> list[str]:
+    """Chapter labels of a subject's readable study material, in chapter order: what a parent can choose from."""
+    labels = {d.chapter for d in db.scalars(_material(db, subject)) if d.chapter}
+    return sorted(labels, key=lambda lbl: (chapter_number(lbl) is None, chapter_number(lbl) or 0, lbl))
+
+
+def parent_previous_questions(db: Session, sheet: ParentSheet) -> list[str]:
+    """Questions in this child's recent practice sheets for the subject, so a new sheet doesn't repeat them."""
+    out: list[str] = []
+    for old in db.scalars(select(ParentSheet).where(
+            ParentSheet.student_id == sheet.student_id, ParentSheet.id != sheet.id, ParentSheet.status == "ready",
+            func.lower(ParentSheet.subject_name) == sheet.subject_name.lower()).order_by(ParentSheet.id.desc()).limit(5)):
+        for s in old.content.get("sections", []):
+            out.extend(q.get("text", "") for q in s.get("questions", []) if q.get("text"))
+    return list(dict.fromkeys(out))
+
+
+def create_parent_sheet(db: Session, sheet: ParentSheet) -> None:
+    """Write a parent's practice sheet from the subject's study material (optionally only the chosen chapters).
+    No teacher review, so a sheet that fails the quality checks is rewritten once, then reported as failed."""
+    sc = db.get(SchoolClass, sheet.class_id)
+    subject = find_subject(db, sc.id, sheet.subject_name)
+    if subject is None:
+        raise BlockedError(f"{sc.name} no longer has the subject {sheet.subject_name}.")
+    settings = merge_worksheet_settings(get_setting(db, "worksheet_defaults"), sc.worksheet_settings,
+                                        subject.worksheet_settings)
+    settings["language"] = worksheet_language(settings, subject.name)
+    scope = {"chapter_labels": list(sheet.chapters), "text": ", ".join(sheet.chapters)} if sheet.chapters else None
+    plan = Plan(sc, None, subject, scope, settings, seed=str(sheet.id))
+    plan.avoid = parent_previous_questions(db, sheet)
+    load_material(db, plan)
+
+    block, by_id = _passages_block(plan.passages)
+    passage_text = {sid: p.text for sid, p in by_id.items()}
+    offline = get_settings().llm_provider == "offline"
+    for attempt in range(PARENT_ATTEMPTS):
+        content, generator = (generate_offline(plan), "offline (no model)") if offline \
+            else llm.generate_worksheet_json(block, _brief(plan))
+        content = normalize_content(_normalize(content))
+        result = validate(content, settings, passage_text, set(by_id))
+        if result["passed"]:
+            break
+        plan.seed += "-again"
+    else:
+        sheet.status, sheet.validation = "failed", result
+        sheet.error = "The sheet did not pass the quality checks. Please try again; this attempt is not counted."
+        return
+
+    content["title"] = content.get("title") or plan.title()
+    sheet.title, sheet.content, sheet.settings_used, sheet.validation = content["title"], content, settings, result
+    sheet.generator = generator
+    slug = re.sub(r"[^A-Za-z0-9]+", "_", f"{subject.name}_Class{sc.grade}").strip("_")
+    path = get_settings().worksheets_dir / "parents" / f"student_{sheet.student_id}" / f"{slug}_{sheet.id}.pdf"
+    sheet.pdf_path = str(render_worksheet_pdf(sheet, sc, path=path))
+    sheet.status, sheet.error = "ready", None

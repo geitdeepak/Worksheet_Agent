@@ -16,12 +16,22 @@ import DeliveryList from './pages/DeliveryList';
 import DeliveryMonitor from './pages/DeliveryMonitor';
 import History from './pages/History';
 import Settings from './pages/Settings';
+import ParentHome from './pages/ParentHome';
 
+/** Staff pages (admins and teachers). Parents only have their practice-sheet page. */
 function Protected({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const loc = useLocation();
   if (!user) return <Navigate to="/login" state={{ from: loc.pathname }} replace />;
+  if (user.role === 'parent') return <Navigate to="/parent" replace />;
   return <ClassesProvider>{children}</ClassesProvider>;
+}
+
+function ParentOnly({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  if (!user) return <Navigate to="/login" state={{ from: '/parent' }} replace />;
+  if (user.role !== 'parent') return <Navigate to="/" replace />;
+  return <>{children}</>;
 }
 
 function App() {
@@ -38,6 +48,7 @@ function App() {
       <Route path="/delivery/:id" element={<Protected><DeliveryMonitor /></Protected>} />
       <Route path="/history" element={<Protected><History /></Protected>} />
       <Route path="/settings" element={<Protected><Settings /></Protected>} />
+      <Route path="/parent" element={<ParentOnly><ParentHome /></ParentOnly>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

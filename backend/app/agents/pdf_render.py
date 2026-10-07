@@ -128,15 +128,18 @@ def _footer(title: str):
 
 
 HI = {"Class": "कक्षा", "Section": "अनुभाग", "Exam": "परीक्षा", "Exam ID": "परीक्षा आईडी", "Name": "नाम",
-      "Roll no.": "अनुक्रमांक", "Answer key": "उत्तर कुंजी"}
+      "Roll no.": "अनुक्रमांक", "Answer key": "उत्तर कुंजी", "Practice sheet": "अभ्यास पत्रक"}
 
 
-def render_worksheet_pdf(ws, school_class) -> Path:
+def render_worksheet_pdf(ws, school_class, path: Path | None = None) -> Path:
+    """ws is a Worksheet, or a ParentSheet (no exam: the header says 'Practice sheet' and its date instead)."""
     st = _styles()
-    folder = get_settings().worksheets_dir / f"class_{school_class.id}"
-    folder.mkdir(parents=True, exist_ok=True)
-    slug = re.sub(r"[^A-Za-z0-9]+", "_", f"{ws.subject_name}_Class{school_class.grade}_{ws.exam_date.isoformat()}").strip("_")
-    path = folder / f"{slug}_v{ws.version}.pdf"
+    if path is None:
+        folder = get_settings().worksheets_dir / f"class_{school_class.id}"
+        slug = re.sub(r"[^A-Za-z0-9]+", "_", f"{ws.subject_name}_Class{school_class.grade}_{ws.exam_date.isoformat()}").strip("_")
+        path = folder / f"{slug}_v{ws.version}.pdf"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    exam_date = getattr(ws, "exam_date", None)
 
     content = ws.content
     settings = ws.settings_used or {}
@@ -145,8 +148,9 @@ def render_worksheet_pdf(ws, school_class) -> Path:
     labels = section_labels(settings.get("language"))
 
     story = [Paragraph(rich(ws.title, bold=True), st["title"])]
-    meta = [f"{t('Class')} {school_class.grade}" + (f" · {t('Section')} {ws.sections}" if ws.sections else ""),
-            f"{t('Exam')} {fmt_date(ws.exam_date)}", f"{t('Exam ID')} {ws.exam_code}"]
+    meta = [f"{t('Class')} {school_class.grade}" + (f" · {t('Section')} {ws.sections}" if ws.sections else "")]
+    meta += ([f"{t('Exam')} {fmt_date(exam_date)}", f"{t('Exam ID')} {ws.exam_code}"] if exam_date
+             else [t("Practice sheet"), fmt_date(ws.created_at.date())])
     story.append(Paragraph(rich(" · ".join(meta)), st["meta"]))
     story.append(Spacer(1, 8))
     info = Table([[Paragraph(rich(t("Name")), st["small"]), "", Paragraph(rich(t("Roll no.")), st["small"]), ""]],

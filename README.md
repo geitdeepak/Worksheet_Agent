@@ -6,6 +6,13 @@ and delivers them to the right students — by email in Phase 1, by email and Wh
 An administrator configures each class once (date sheet, **exam syllabus**, subject PDFs, students, worksheet settings)
 and activates automation. From then on the platform runs by itself.
 
+**Roles.** *Administrators* manage everything. *Teachers* see, review and approve worksheets for the classes they are
+assigned. *Parents* (added by an administrator in Settings › People and linked to their children) sign in to their own
+page and make private practice sheets for their child: any subject of the child's class, optionally specific chapters,
+any time. These sheets are downloaded as PDFs straight away; they never go through teacher review or class delivery.
+Each child can get a limited number per day (Settings › Saving AI costs, default 3; failed attempts don't count), and
+parents cannot reach any staff page or another family's sheets.
+
 ```
 Admin UI → Class workspace → Scheduler/Orchestrator → Worksheet Creation Agent (RAG + Claude)
         → Validation → Review/approval or auto release → Worksheet Sharing Agent → Email / WhatsApp → Tracking

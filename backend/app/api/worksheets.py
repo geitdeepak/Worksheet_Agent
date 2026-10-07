@@ -16,7 +16,7 @@ from ..agents.pdf_render import render_worksheet_pdf
 from ..db import get_db
 from ..models import Delivery, Job, SchoolClass, Student, User, Worksheet
 from ..orchestrator import regenerate, release, share_key
-from ..security import can_access_class, current_user, get_class_for
+from ..security import can_access_class, get_class_for, require_staff
 from ..services.common import SECTION_LABELS, audit, fmt_date, fmt_day_month, get_setting, institution_tz, mask_email, mask_phone
 from ..worker import worker
 from .admin import visible_class_ids
@@ -41,7 +41,7 @@ def ws_summary(db: Session, ws: Worksheet, c: SchoolClass) -> dict:
 
 
 @router.get("/worksheets")
-def list_worksheets(status: str | None = None, class_id: int | None = None, user: User = Depends(current_user),
+def list_worksheets(status: str | None = None, class_id: int | None = None, user: User = Depends(require_staff),
                     db: Session = Depends(get_db)):
     ids = visible_class_ids(db, user)
     q = select(Worksheet).where(Worksheet.class_id.in_(ids))
@@ -54,7 +54,7 @@ def list_worksheets(status: str | None = None, class_id: int | None = None, user
 
 
 @router.get("/worksheets/{ws_id}")
-def get_worksheet(ws_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def get_worksheet(ws_id: int, user: User = Depends(require_staff), db: Session = Depends(get_db)):
     ws = _ws(db, user, ws_id)
     c = db.get(SchoolClass, ws.class_id)
     recipients = sharing_agent.eligible_students(db, ws)
@@ -70,7 +70,7 @@ def get_worksheet(ws_id: int, user: User = Depends(current_user), db: Session = 
 
 
 @router.get("/worksheets/{ws_id}/pdf")
-def worksheet_pdf(ws_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def worksheet_pdf(ws_id: int, user: User = Depends(require_staff), db: Session = Depends(get_db)):
     ws = _ws(db, user, ws_id)
     if not ws.pdf_path or not Path(ws.pdf_path).exists():
         raise HTTPException(404, "The PDF has not been generated.")
@@ -83,7 +83,7 @@ class ContentIn(BaseModel):
 
 
 @router.put("/worksheets/{ws_id}/content")
-def edit_worksheet(ws_id: int, body: ContentIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def edit_worksheet(ws_id: int, body: ContentIn, user: User = Depends(require_staff), db: Session = Depends(get_db)):
     """Teachers and admins can edit everything during review: wording, answers, options, difficulty, and add,
     delete, reorder or move questions between sections. Validation re-runs on every save."""
     from ..agents.mathtext import normalize_content
@@ -142,7 +142,7 @@ class ApproveIn(BaseModel):
 
 
 @router.post("/worksheets/{ws_id}/approve")
-def approve(ws_id: int, body: ApproveIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def approve(ws_id: int, body: ApproveIn, user: User = Depends(require_staff), db: Session = Depends(get_db)):
     ws = _ws(db, user, ws_id)
     if ws.status == "validation-failed":
         if not body.override:
@@ -164,7 +164,7 @@ class RegenerateIn(BaseModel):
 
 
 @router.post("/worksheets/{ws_id}/regenerate")
-def regen(ws_id: int, body: RegenerateIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def regen(ws_id: int, body: RegenerateIn, user: User = Depends(require_staff), db: Session = Depends(get_db)):
     ws = _ws(db, user, ws_id)
     if ws.status == "released":
         raise HTTPException(409, "This worksheet has already been released to students.")
@@ -182,7 +182,7 @@ class AnotherIn(BaseModel):
 
 
 @router.post("/worksheets/{ws_id}/another")
-def another(ws_id: int, body: AnotherIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def another(ws_id: int, body: AnotherIn, user: User = Depends(require_staff), db: Session = Depends(get_db)):
     """One more practice sheet for the same exam, after a worksheet has already been sent. New questions only;
     it goes through review and is sent to the same students as a separate delivery."""
     ws = _ws(db, user, ws_id)
@@ -220,7 +220,7 @@ def _deliveries(db: Session, ws: Worksheet) -> list[dict]:
 
 
 @router.get("/deliveries")
-def delivery_overview(user: User = Depends(current_user), db: Session = Depends(get_db)):
+def delivery_overview(user: User = Depends(require_staff), db: Session = Depends(get_db)):
     """Released worksheets with per-channel counts, newest first."""
     ids = visible_class_ids(db, user)
     classes = {c.id: c for c in db.scalars(select(SchoolClass))}
@@ -232,7 +232,7 @@ def delivery_overview(user: User = Depends(current_user), db: Session = Depends(
 
 
 @router.get("/worksheets/{ws_id}/deliveries")
-def worksheet_deliveries(ws_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def worksheet_deliveries(ws_id: int, user: User = Depends(require_staff), db: Session = Depends(get_db)):
     ws = _ws(db, user, ws_id)
     c = db.get(SchoolClass, ws.class_id)
     job = db.scalar(select(Job).where(Job.business_key == share_key(ws)))
@@ -246,7 +246,7 @@ def worksheet_deliveries(ws_id: int, user: User = Depends(current_user), db: Ses
 
 
 @router.post("/worksheets/{ws_id}/retry-failed")
-def retry_failed(ws_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def retry_failed(ws_id: int, user: User = Depends(require_staff), db: Session = Depends(get_db)):
     """Re-send failed deliveries (after contacts were fixed) and pick up newly enabled channels/students."""
     ws = _ws(db, user, ws_id)
     get_class_for(db, user, ws.class_id)
@@ -268,7 +268,7 @@ def retry_failed(ws_id: int, user: User = Depends(current_user), db: Session = D
 
 
 @router.get("/worksheets/{ws_id}/deliveries.csv")
-def export_csv(ws_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def export_csv(ws_id: int, user: User = Depends(require_staff), db: Session = Depends(get_db)):
     ws = _ws(db, user, ws_id)
     buf = io.StringIO()
     w = csv.writer(buf)

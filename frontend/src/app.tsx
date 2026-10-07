@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api, setToken, setUnauthorizedHandler } from './api';
 import { AppShell, Banner, Button, Icon } from './components/ds';
 
-export interface User { id: number; email: string; name: string; role: 'admin' | 'teacher'; class_access: number[] }
+export interface User { id: number; email: string; name: string; role: 'admin' | 'teacher' | 'parent'; class_access: number[]; student_ids: number[] }
 export interface ClassRef { id: number; name: string }
 
 /* ------------------------------------------------------------------ auth */

@@ -9,9 +9,9 @@ from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..db import get_db
-from ..models import AuditEvent, Delivery, Exam, Job, SchoolClass, User, Worksheet
+from ..models import AuditEvent, Delivery, Exam, Job, SchoolClass, Student, User, Worksheet
 from ..orchestrator import daily_check, readiness_problems
-from ..security import create_token, current_user, hash_password, require_admin, verify_password
+from ..security import create_token, current_user, hash_password, require_admin, require_staff, verify_password
 from ..services.common import (all_settings, audit, fmt_date, fmt_day_month, institution_tz, local_today,
                                set_setting)
 from ..worker import worker
@@ -27,7 +27,7 @@ class LoginIn(BaseModel):
 
 def user_out(u: User) -> dict:
     return {"id": u.id, "email": u.email, "name": u.name, "role": u.role, "class_access": u.class_access or [],
-            "active": u.active}
+            "student_ids": u.student_ids or [], "active": u.active}
 
 
 @router.post("/auth/login")
@@ -67,24 +67,51 @@ class UserIn(BaseModel):
     role: str = "teacher"
     password: str | None = None
     class_access: list[int] = []
+    student_ids: list[int] = []  # parents only: their children
     active: bool = True
+
+
+ROLES = ("admin", "teacher", "parent")
+
+
+def _access_for(db: Session, body: UserIn) -> tuple[list[int], list[int]]:
+    """(class_access, student_ids) for the role. Teachers see classes; parents see only their linked children."""
+    if body.role not in ROLES:
+        raise HTTPException(400, "Role must be admin, teacher or parent.")
+    if body.role != "parent":
+        return (body.class_access if body.role == "teacher" else []), []
+    ids = list(dict.fromkeys(body.student_ids))
+    if not ids:
+        raise HTTPException(400, "Link the parent to at least one child.")
+    found = set(db.scalars(select(Student.id).where(Student.id.in_(ids))))
+    if found != set(ids):
+        raise HTTPException(400, "One of the selected children no longer exists.")
+    return [], ids
+
+
+def users_out(db: Session, users: list[User]) -> list[dict]:
+    """user_out plus the children's names, for the People list."""
+    ids = {i for u in users for i in (u.student_ids or [])}
+    kids = {s.id: s for s in db.scalars(select(Student).where(Student.id.in_(ids)))} if ids else {}
+    names = {c.id: c.name for c in db.scalars(select(SchoolClass))}
+    return [{**user_out(u), "children": [{"id": s.id, "name": s.name, "class": names.get(s.class_id), "section": s.section}
+                                         for i in (u.student_ids or []) if (s := kids.get(i))]} for u in users]
 
 
 @router.get("/users")
 def list_users(_: User = Depends(require_admin), db: Session = Depends(get_db)):
-    return [user_out(u) for u in db.scalars(select(User).order_by(User.name))]
+    return users_out(db, list(db.scalars(select(User).order_by(User.name))))
 
 
 @router.post("/users")
 def create_user(body: UserIn, admin: User = Depends(require_admin), db: Session = Depends(get_db)):
-    if body.role not in ("admin", "teacher"):
-        raise HTTPException(400, "Role must be admin or teacher.")
+    class_access, student_ids = _access_for(db, body)
     if not body.password or len(body.password) < 8:
         raise HTTPException(400, "Set a password of at least 8 characters.")
     if db.scalar(select(User).where(func.lower(User.email) == body.email.lower())):
         raise HTTPException(409, "A user with this email already exists.")
-    u = User(email=body.email.strip(), name=body.name.strip(), role=body.role, class_access=body.class_access,
-             password_hash=hash_password(body.password))
+    u = User(email=body.email.strip(), name=body.name.strip(), role=body.role, class_access=class_access,
+             student_ids=student_ids, password_hash=hash_password(body.password))
     db.add(u)
     audit(db, "user", f"Added {body.role} {u.email}", actor=admin.email)
     db.commit()
@@ -96,7 +123,10 @@ def update_user(user_id: int, body: UserIn, admin: User = Depends(require_admin)
     u = db.get(User, user_id)
     if u is None:
         raise HTTPException(404, "User not found.")
-    u.name, u.role, u.class_access, u.active = body.name, body.role, body.class_access, body.active
+    if u.id == admin.id and body.role != "admin":
+        raise HTTPException(400, "You can't remove your own administrator role.")
+    u.class_access, u.student_ids = _access_for(db, body)
+    u.name, u.role, u.active = body.name, body.role, body.active
     if body.password:
         u.password_hash = hash_password(body.password)
     audit(db, "user", f"Updated {u.email}", actor=admin.email)
@@ -114,6 +144,7 @@ class SettingsIn(BaseModel):
     worksheet_defaults: dict | None = None
     reuse_worksheets: bool | None = None
     use_batch: bool | None = None
+    parent_daily_limit: int | None = Field(default=None, ge=1, le=20)
 
 
 def settings_out(db: Session) -> dict:
@@ -127,7 +158,7 @@ def settings_out(db: Session) -> dict:
 
 
 @router.get("/settings")
-def get_app_settings(_: User = Depends(current_user), db: Session = Depends(get_db)):
+def get_app_settings(_: User = Depends(require_staff), db: Session = Depends(get_db)):
     return settings_out(db)
 
 
@@ -163,7 +194,7 @@ def visible_class_ids(db: Session, user: User) -> list[int]:
 
 
 @router.get("/dashboard")
-def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db)):
+def dashboard(user: User = Depends(require_staff), db: Session = Depends(get_db)):
     ids = visible_class_ids(db, user)
     today = local_today(db)
     tz = institution_tz(db)
@@ -279,7 +310,7 @@ def run_check_now(admin: User = Depends(require_admin), db: Session = Depends(ge
 
 @router.get("/jobs")
 def list_jobs(status: str | None = None, class_id: int | None = None, limit: int = Query(100, le=500),
-              user: User = Depends(current_user), db: Session = Depends(get_db)):
+              user: User = Depends(require_staff), db: Session = Depends(get_db)):
     ids = visible_class_ids(db, user)
     q = select(Job).where(Job.class_id.in_(ids))
     if status:
@@ -313,7 +344,7 @@ def retry_job(job_id: int, admin: User = Depends(require_admin), db: Session = D
 @router.get("/audit")
 def audit_log(event: str | None = None, class_id: int | None = None, level: str | None = None,
               q: str | None = None, before_id: int | None = None, limit: int = Query(100, le=500),
-              user: User = Depends(current_user), db: Session = Depends(get_db)):
+              user: User = Depends(require_staff), db: Session = Depends(get_db)):
     ids = visible_class_ids(db, user)
     stmt = select(AuditEvent)
     if user.role != "admin":

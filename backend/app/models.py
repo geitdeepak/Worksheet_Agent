@@ -19,8 +19,9 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(255))
     password_hash: Mapped[str] = mapped_column(String(255))
-    role: Mapped[str] = mapped_column(String(20), default="teacher")  # admin | teacher
+    role: Mapped[str] = mapped_column(String(20), default="teacher")  # admin | teacher | parent
     class_access: Mapped[list] = mapped_column(JSON, default=list)  # class ids a teacher may see
+    student_ids: Mapped[list | None] = mapped_column(JSON, nullable=True, default=list)  # a parent's children
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
@@ -142,7 +143,7 @@ class Job(Base):
     can never create the same job twice."""
     __tablename__ = "jobs"
     id: Mapped[int] = mapped_column(primary_key=True)
-    type: Mapped[str] = mapped_column(String(40))  # CREATE_WORKSHEET | SHARE_WORKSHEET
+    type: Mapped[str] = mapped_column(String(40))  # CREATE_WORKSHEET | SHARE_WORKSHEET | PARENT_WORKSHEET
     business_key: Mapped[str] = mapped_column(String(400), unique=True)
     class_id: Mapped[int] = mapped_column(ForeignKey("classes.id", ondelete="CASCADE"), index=True)
     exam_id: Mapped[int | None] = mapped_column(ForeignKey("exams.id", ondelete="SET NULL"), nullable=True)
@@ -189,6 +190,28 @@ class Worksheet(Base):
     released_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     reused_from_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # copied from another worksheet
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class ParentSheet(Base):
+    """A practice sheet a parent made for their own child. Private to that child: it never goes through teacher
+    review or class delivery, and it is not tied to an exam."""
+    __tablename__ = "parent_sheets"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    parent_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    student_id: Mapped[int] = mapped_column(ForeignKey("students.id", ondelete="CASCADE"), index=True)
+    class_id: Mapped[int] = mapped_column(ForeignKey("classes.id", ondelete="CASCADE"), index=True)
+    subject_name: Mapped[str] = mapped_column(String(120))
+    chapters: Mapped[list] = mapped_column(JSON, default=list)  # chapter labels chosen by the parent; [] = all
+    sections: Mapped[str] = mapped_column(String(20), default="")  # the child's section (printed on the PDF)
+    status: Mapped[str] = mapped_column(String(20), default="generating", index=True)  # generating | ready | failed
+    title: Mapped[str] = mapped_column(String(300), default="")
+    content: Mapped[dict] = mapped_column(JSON, default=dict)
+    settings_used: Mapped[dict] = mapped_column(JSON, default=dict)
+    validation: Mapped[dict] = mapped_column(JSON, default=dict)
+    generator: Mapped[str] = mapped_column(String(80), default="")
+    pdf_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
 
 
 class Delivery(Base):

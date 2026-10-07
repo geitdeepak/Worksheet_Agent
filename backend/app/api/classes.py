@@ -11,7 +11,7 @@ from ..config import get_settings
 from ..db import get_db
 from ..models import Document, Exam, Job, SchoolClass, Student, Subject, Worksheet, utcnow
 from ..orchestrator import cancel_obsolete, manual_generate, readiness_problems
-from ..security import current_user, get_class_for, require_admin
+from ..security import get_class_for, require_admin, require_staff
 from ..models import User
 from ..services.common import (LANGUAGES, SECTION_LABELS, audit, is_hindi_subject, worksheet_language, fmt_date, fmt_day_month, get_setting, local_today, mask_email,
                                mask_phone, merge_worksheet_settings, normalize_whatsapp, valid_email)
@@ -78,7 +78,7 @@ def _grade_from_name(name: str) -> str:
 
 
 @router.get("/classes")
-def list_classes(user: User = Depends(current_user), db: Session = Depends(get_db)):
+def list_classes(user: User = Depends(require_staff), db: Session = Depends(get_db)):
     rows = db.scalars(select(SchoolClass))
     visible = [c for c in rows if user.role == "admin" or c.id in (user.class_access or [])]
     visible.sort(key=lambda c: (int(c.grade) if c.grade.isdigit() else 99, c.name))
@@ -103,7 +103,7 @@ def _norm_sections(s: str) -> str:
 
 
 @router.get("/classes/{class_id}")
-def get_class(class_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def get_class(class_id: int, user: User = Depends(require_staff), db: Session = Depends(get_db)):
     c = get_class_for(db, user, class_id)
     return workspace(db, c)
 
@@ -345,7 +345,7 @@ def _xlsx(data: bytes, name: str):
 
 
 @router.get("/classes/{class_id}/datesheet/template.xlsx")
-def datesheet_template(class_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def datesheet_template(class_id: int, user: User = Depends(require_staff), db: Session = Depends(get_db)):
     from ..services.templates import datesheet_template as build
     c = get_class_for(db, user, class_id)
     subjects = [s.name for s in sorted(c.subjects, key=lambda s: s.name)]
@@ -353,14 +353,14 @@ def datesheet_template(class_id: int, user: User = Depends(current_user), db: Se
 
 
 @router.get("/classes/{class_id}/syllabus/template.xlsx")
-def syllabus_template(class_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def syllabus_template(class_id: int, user: User = Depends(require_staff), db: Session = Depends(get_db)):
     from ..services.templates import syllabus_template as build
     c = get_class_for(db, user, class_id)
     return _xlsx(build(_syllabus_subjects(c)), f"Syllabus_{c.name.replace(' ', '_')}.xlsx")
 
 
 @router.get("/classes/{class_id}/syllabus")
-def get_syllabus(class_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def get_syllabus(class_id: int, user: User = Depends(require_staff), db: Session = Depends(get_db)):
     return syllabus_state(get_class_for(db, user, class_id))
 
 
@@ -455,7 +455,7 @@ def confirm_syllabus(class_id: int, admin: User = Depends(require_admin), db: Se
 
 
 @router.get("/classes/{class_id}/syllabus/file")
-def syllabus_file(class_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def syllabus_file(class_id: int, user: User = Depends(require_staff), db: Session = Depends(get_db)):
     c = get_class_for(db, user, class_id)
     if not c.syllabus_path:
         raise HTTPException(404, "No syllabus uploaded.")
@@ -545,7 +545,7 @@ def subject_out(s: Subject, include_inactive: bool = True) -> dict:
 
 
 @router.get("/classes/{class_id}/subjects")
-def list_subjects(class_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def list_subjects(class_id: int, user: User = Depends(require_staff), db: Session = Depends(get_db)):
     c = get_class_for(db, user, class_id)
     exam_subjects = sorted({e.subject_name for e in c.exams if e.active})
     have = {s.name.lower() for s in c.subjects}
@@ -628,7 +628,7 @@ def patch_document(doc_id: int, body: DocPatch, admin: User = Depends(require_ad
 
 
 @router.get("/documents/{doc_id}/file")
-def document_file(doc_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def document_file(doc_id: int, user: User = Depends(require_staff), db: Session = Depends(get_db)):
     d = db.get(Document, doc_id)
     if d is None:
         raise HTTPException(404, "Document not found.")
@@ -644,7 +644,7 @@ def student_out(s: Student) -> dict:
 
 
 @router.get("/classes/{class_id}/students")
-def list_students(class_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def list_students(class_id: int, user: User = Depends(require_staff), db: Session = Depends(get_db)):
     c = get_class_for(db, user, class_id)
     rows = sorted(c.students, key=lambda s: (s.section, s.student_code))
     return {"students": [student_out(s) for s in rows],
@@ -716,7 +716,7 @@ async def upload_students_school(file: UploadFile = File(...), replace: bool = F
 
 
 @router.get("/students/template.xlsx")
-def student_template(class_id: int | None = None, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def student_template(class_id: int | None = None, user: User = Depends(require_staff), db: Session = Depends(get_db)):
     from fastapi.responses import Response
     from ..services.student_import import template_xlsx
     c = get_class_for(db, user, class_id) if class_id else None
@@ -822,7 +822,7 @@ class SettingsLayer(BaseModel):
 
 
 @router.get("/classes/{class_id}/worksheet-settings")
-def get_ws_settings(class_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def get_ws_settings(class_id: int, user: User = Depends(require_staff), db: Session = Depends(get_db)):
     c = get_class_for(db, user, class_id)
     glob = get_setting(db, "worksheet_defaults")
     return {"global": merge_worksheet_settings(glob), "class_override": c.worksheet_settings,
